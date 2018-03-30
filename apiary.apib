@@ -1,0 +1,4406 @@
+FORMAT: 1A
+
+# AllDigital Brevity Public API
+
+## Introduction
+
+The Brevity Cloud API can be used to control and manage all aspects of the Brevity platform within your organization.  At a high level, tasks include account and user management, project and workflow creation, transcoding profile template managements, and querying jobs.
+
+## Content types
+
+The Brevity V5 REST API supports both standard json, and HAL formatted json, with the latter being the preffered.
+
+Specific MIME types are utilized to handle versioning of the API.  It is the responsibility of the client to specify the required version as part of the MIME type.
+
+Valid MIME types are:
+
+HAL:
+```
+Accept: application/vnd.ad-brevity-v1.0hal+json
+```
+Standard JSON:
+```
+Accept: application/vnd.ad-brevity-v1.0+json
+```
+
+
+
+## HTTP Methods
+
+The platform utilizes the following standard HTTP verbs:
+
+| HTTP Method | Description | Idempotent | Safe |
+|-------------|-------------|------------|------|
+| GET | Retrieves an entity | Yes | Yes |
+| POST | Creates a new entity | No | No |
+| PUT | Updates an existing entity | Yes | No |
+| PATCH | Updates part of an en existing entity | No | No |
+| DELETE | Deletes an existing entity | Yes | No |
+
+A method marked as **safe** signifies that the method is read-only.  A method marked as **idempotent** signifies that if the request is repeated, the same result shall occur each time.
+    
+
+## Error States
+
+The API makes use of [standard HTTP codes](https://github.com/for-GET/know-your-http-well/blob/master/status-codes.md) to signify error states.  
+
+**4xx** errors indicate an error caused by the client, such as a malformed request.
+
+**5xx** errors indicate a server malfunction, and is incapable of performing the request.
+
+
+## Caching
+
+Various HTTP caching strategies are in place:
+
+### HTTP Cache Headers
+
+Where relevant, responses will include a `Cache-Control` standard HTTP header.
+
+The `Cache-Control` header signifies to the client whether caching is allowed and should be enabled or not for the response.  It is the responsibility of the consumer of the service to ensure that the HTTP cache headers are abided when provided.  
+
+An example cache control response header to enable caching as follows:
+
+```
+Cache-Control: public, max-age=3600
+```
+
+An example cache control response header to explicitly disable caching as follows:
+
+```
+Cache-Control: no-cache
+```
+
+
+## Pagination
+
+By default, results are paginated 100 items per request.  To alter the default pagination, pass the following parameters as part of the request:
+
++ `page` - the (zero indexed) page of results to return
++ `size` - the size of results to return for the page
+
+When processing a paginated response, the following is added to the response body:
+
+```
+{   
+    ...
+    "page": {
+        "size": 2000,
+        "totalElements": 20,
+        "totalPages": 1,
+        "number": 0
+    }
+}
+```
+
+If the above `page` element has a `totalPages` greater than `1`, this signifies to the consumer that the response is a single page of data, and that more pages of data are available.  *HATEOAS* links will be provided for navigation to other pages.  
+
+## Filtering
+
+By default, results are not filtered.  Filters can be specified for the results using the `filter` query parameter.  Individual filter phrases are separated with a vertical bar '|', with a double colon '::' separating field names and values, all enclosed in double quotes '"', e.g.
+
+```
+?filter=name::John|enabled::true
+```
+
+It is recommended that the filter value is url encoded, therefore the above example would become:
+
+```
+?filter=name%3A%3AJohn%7Cenabled%3A%3Atrue
+```
+
+## Sorting
+
+A sort order may be specified for a result set using the `sort` query parameter.  By default, each sort field is ascending unless followed by the direction.  If multiple sort fields are required, specify each field individually as a separate &sort parameter, e.g.
+
+```
+?sort=name,desc&sort=createdAt,asc
+```
+
+## Security
+
+All API's are accessible over *https* only.  Any attempt to access the API's via *http* will be blocked.
+
+All secure API's must be called with a valid JWT token passed as the value of the `Authorization` request header, e.g.
+
+```
+Authorization: Bearer hduu82u8d329es39fu.dj38d37782.d827e3eudj3
+```
+
+A token may be retrieved for an authenicated user by calling the *organizations* service as described below.  
+
+
+### Security Roles
+
+Each `User` in the Brevity platform is assigned to an `Organization` with one of the following roles:
+
++ ORG_USER
+    + View organization details
+    + Manage own User details
+    + View list of users within their organization
+    + View list of locations within their organization
+    + View details of their Organization
+    + View list of organizations that they belong to
+    + View list of sub-organizations for their organization
++ ORG_MANAGER
+    + Includes all permissions from ORG_USER
+    + Manage details of Project's that they own
+    + Manage details of any Project belonging to their Organization
+    + List all Projects belonging to their Organization
++ ORG_ADMIN
+    + Includes all permissions from ORG_MANAGER
+    + Manage their Organization
+    + Manage users for the Organization
+    + Manage locations
++ SYS_ADMIN
+    + Includes all permissions from ORG_ADMIN
+    + Manage engines and cluster of engines
+
+
+Each `User` is also assigned one of the following roles when assigned to a `Project`:
++ Contributor
+    + May upload content into a project
++ Editor
+    + In addition to contributor, may manage project options including setting delivery options and managers
++ Owner
+    + Reserved for future use
+
+
+# Group authentication service
+
+Endpoint:   https://authn-stable.brevitycloud.net
+
+# Introduction
+
+The *authn* service is accountable for the verification of user credentials and the issuance of tokens.  The generated token must be used for accessing all of the remainder API's.
+
+# Token [/token]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+    
+            {
+                "email": "someone@somewhere.com",
+                "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJicmV2aXR5LmFsbGRpZ2l0YWwuY29tIiwiZXhwIjoxNDY2MDQ2NjU1LCJqdGkiOiJGZnQ2aGt6VllreU1jS1luUnplX3FBIiwiaWF0IjoxNDY2MDE3ODU1LCJzdWJqZWN0X3R5cGUiOiJVU0VSUyIsInN1YiI6ImIzYTA3Y2ZkLTI5NjktNDlkMi1iMmNiLTNmYTU0M2ZkZDc3MiIsImh0dHA6Ly9hbGxkaWdpdGFsLmNvbS9icmV2aXR5L29yZ2FuaXphdGlvbnMiOnsiaWQiOiI1MTNhZjZlOS01YzcwLTQ0ZjMtYjYyMC0yMGFkM2VkYzgyMzIiLCJyb2xlIjoiU1lTX0FETUlOIn0sInJvb3QiOnsiaWQiOiI1MTNhZjZlOS01YzcwLTQ0ZjMtYjYyMC0yMGFkM2VkYzgyMzIiLCJyb2xlIjoiU1lTX0FETUlOIn19.PBwsREcBLihfq9k-REF2AXoNkC8Uoe2pthM_Dq5LqQA",
+                "organization_uid": "708577f3-2522-41d8-8636-3f759b46f1b0",
+                "organization_name": "Acme Corporation",
+                "user_uid": "333451ca-16d4-465b-b725-aa5065dadd0d"
+            }
+            
+
+## Create a JWT token for the users primary Organization [POST]
+
+Upon an *email* and *password* being POSTed to the service, the user credentials are validated, and a JWT token containing the user's claims for their primary Organization is returned.
+
++ Attributes
+    + email (string)
+    + password (string)
+
++ Request Retrieve a new token (application/vnd.ad-brevity-v1.0+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "email": "someone@somewhere.com",
+                "password": "secret"
+            }
+
++ Response 201
+
+    [Token][]
+                
++ Request User not authenticated (application/vnd.ad-brevity-v1.0+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "email": "someone@somewhere.com",
+                "password": "wrong_password"
+            }
+
++ Response 401
+
+
+## Create a JWT token for a specific Organization [POST /organizations/{ouid}/token]
+
+Upon an *email* and *password* being POSTed to the service, the user credentials are validated, and a JWT token containing the user's claims for a specific Organization is returned.
+
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    
++ Attributes
+    + email (string)
+    + password (string)
+
++ Request Retrieve a new token (application/vnd.ad-brevity-v1.0+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "email": "someone@somewhere.com",
+                "password": "secret"
+            }
+
++ Response 201 
+
+    [Token][]
+                
++ Request User not authenticated (application/vnd.ad-brevity-v1.0+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "email": "someone@somewhere.com",
+                "password": "wrong_password"
+            }
+
++ Response 401
+
+
+## Upgrade an existing JWT token to switch to an alternate Organization [PUT /organizations/{ouid1}/token/organizations/{ouid2}]
+
+Upon performing a PUT to this endpoint with an existing token in the header, the tokens claim's are updated to reflect the new Organziation providing the User has access to the requested Organization.
+
+
++ Parameters
+    + ouid1 (string, required) - The UUID of the existing Organization
+    + ouid2 (string, required) - The UUID of the Organization requesting to be switched to
+    
+
++ Request Retrieve a new token (application/vnd.ad-brevity-v1.0+json)
++ Response 201 
+
+    [Token][]
+                
++ Request Invalid token (application/vnd.ad-brevity-v1.0+json)
++ Response 401
+
+
+
+
+# Group organizations service
+
+Endpoint:   https://organizations-stable.brevitycloud.net
+
+# Introduction
+
+The *organizations* service is accountable for the management and viewing of organizations and users.
+
+
+# Organization [/organizations/{uid}]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+
+            {
+                "uid": "708577f3-2522-41d8-8636-3f759b46f1b0",
+                "name": "Acme Corporation",
+                "role": "ORG_USER",
+                "enabled": true,
+                
+                "turn": {
+                    "enabled": true,
+                    "server": "turnserver@somewhere.net",
+                    "username": "turn-username",
+                    "password": "turn-password"
+                },
+                 
+                "filename_macro": "{{SOURCE_FILE_NAME}}_{{PROFILE_NAME}}.{{TARGET_FILE_EXTENSION}}",
+                
+                "embedded" : {
+                    "parent": {
+                        "uid": "4fb70346-368f-43e4-8f90-420edaa05510",
+                        "name": "Acme Parent Corporation",
+                        "links" : {
+                            "self": { "href": "https://organizations.brevitycloud.net/organizations/4fb70346-368f-43e4-8f90-420edaa05510" }
+                        }
+                    }
+                },
+                    
+                "links" : {
+                    "self": { "href": "https://organizations.brevitycloud.net/organizations/708577f3-2522-41d8-8636-3f759b46f1b0" },
+                    "projects": { "href": "https://projects.brevitycloud.net/organizations/708577f3-2522-41d8-8636-3f759b46f1b0/projects" },
+                    "users": { "href": "https://organizations.brevitycloud.net/organizations/708577f3-2522-41d8-8636-3f759b46f1b0/users" },
+                    "sub-organizations": { "href": "https://organizations.brevitycloud.net/organizations/708577f3-2522-41d8-8636-3f759b46f1b0/organizations" }
+                }
+            }
+            
+            
+            
+## Get an Organization [GET /organizations/{uid}]
+
+Returns a specific `Organization` object that matches the provided uid.
+
+User must have the `ORG_USER` role or above for the `Organization` in context.
+
++ Parameters
+    + uid (string, required) - The UUID of the Organization
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Organization][]
+
++ Request Organization does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Update an Organization [PATCH /organizations/{uid}]
+
+Updates a specific `Organization` object that matches the provided uid.
+
+User must have the `ORG_ADMIN` role or above for the `Organization` in context.
+
++ Parameters
+    + uid (string, required) - The UUID of the Organization
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "name": "Acme Corporation",
+                "enabled": true
+            }
+
++ Response 200
+
+    [Organization][]
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Create Organization [POST /organizations]
+
+Creates a new root `Organization` object.
+
+User must have the `SYS_ADMIN` role.
+    
++ Attributes
+    + name (string)
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+    
+            {
+                "name": "Acme Group"
+            }
+
++ Response 201
+
+            {
+                "uid": "082bcb7c-dfb9-486d-8ddd-d6dede9dbaae",
+                "name": "Acme Group",
+                "role": "SYS_USER",
+                "enabled": true,
+                
+                "turn": {
+                    "enabled": false
+                },
+                 
+                "filename_macro": "{{SOURCE_FILE_NAME}}_{{PROFILE_NAME}}.{{TARGET_FILE_EXTENSION}}",
+                    
+                "links" : {
+                    "self": { "href": "https://organizations.brevitycloud.net/organizations/082bcb7c-dfb9-486d-8ddd-d6dede9dbaae" },
+                    "projects": { "href": "https://projects.brevitycloud.net/organizations/082bcb7c-dfb9-486d-8ddd-d6dede9dbaae/projects" },
+                    "users": { "href": "https://organizations.brevitycloud.net/organizations/082bcb7c-dfb9-486d-8ddd-d6dede9dbaae/users" },
+                    "sub-organizations": { "href": "https://organizations.brevitycloud.net/organizations/082bcb7c-dfb9-486d-8ddd-d6dede9dbaae/organizations" }
+                }
+            }
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+# Organizations [/organizations]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+    
+            {
+                "embedded": {
+                    "organizations": [ {
+                        "uid": "92389905-e729-46b4-a069-1de160999914",
+                        "name": "My Organization",
+                        "role": "ORG_ADMIN",
+                        "enabled": true,
+                        "links" : {
+                            "self": { "href": "https://organizations.brevitycloud.net/organizations/92389905-e729-46b4-a069-1de160999914" }
+                        }
+                    }, 
+                    {
+                        "uid": "7b7b4d66-2013-48b4-8a2e-91184e42b13e",
+                        "name": "Another Organization",
+                        "role": "ORG_USER",
+                        "enabled": true,
+                        "links" : {
+                            "self": { "href": "https://organizations.brevitycloud.net/organizations/7b7b4d66-2013-48b4-8a2e-91184e42b13e" }
+                        }
+                    }]
+                },
+                
+                "page": {
+                    "size": 2,
+                    "totalElements": 80,
+                    "totalPages": 40,
+                    "number": 3
+                },
+                "links" : {
+                    "self": { "href": "https://organizations.brevitycloud.net/users/333451ca-16d4-465b-b725-aa5065dadd0d/organizations?page=3&size=2" },
+                    "first": { "href": "https://organizations.brevitycloud.net/users/333451ca-16d4-465b-b725-aa5065dadd0d/organizations?page=1&size=2" },
+                    "prev": { "href": "https://organizations.brevitycloud.net/users/333451ca-16d4-465b-b725-aa5065dadd0d/organizations?page=2&size=2" },
+                    "next": { "href": "https://organizations.brevitycloud.net/users/333451ca-16d4-465b-b725-aa5065dadd0d/organizations?page=4&size=2" },
+                    "last": { "href": "https://organizations.brevitycloud.net/users/333451ca-16d4-465b-b725-aa5065dadd0d/organizations?page=40&size=2" }
+                }
+            }
+
+
+
+## Get all Organizations [GET /users/{uid}/organizations{?page,size,filter,sort}]
+
+Returns all `Organization` objects that a User has access to.
+
+Results may be filtered, sorted and/or paginated.
+
+Any authenticated user may access this endpoint.
+
++ Parameters
+    + uid (uuid) - User UUID
+    + page (integer, optional) - See *pagination*.
+    + size (integer, optional) - See *pagination*.
+    + filter (string, optional) - See *filtering*. 
+    + sort (string, optional) - See *sorting*.  Available fields to sort by are: `name` and `enabled`.
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Organizations][]
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+# Sub-Organizations [/organizations/{uid}/organizations]
+
+## Get all sub-Organizations of a parent Organization [GET /organizations/{uid}/organizations{?page,size,filter,sort}]
+
+Returns all sub-`Organization` objects for a given parent `Organization`.
+
+Results may be filtered, sorted and/or paginated.
+
+User must be an authenticated user of the parent `Organization`.
+
++ Parameters
+    + page (string, optional) - See *pagination*
+    + size (string, optional) - See *pagination*
+    + filter (string, optional) - See *filtering*.  
+    + sort (string, optional) - See *sorting*.  Available fields to sort by are: `name` and `enabled`.
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Organizations][]
+    
++ Request with matching ETag (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 304
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Create a sub-Organization [POST /organizations/{uid}/organizations{?grantAllProfiles,grantAllLocations}]
+
+Creates a new sub-`Organization` belonging to the parent `Organization`.
+
+User must have the `ORG_ADMIN` role or above for the parent `Organization`.
+
++ Parameters
+    + uid (string, required) - UUID of the parent Organization
+    + grantAllProfiles (boolean) - If `true`, the new sub-organization shall be granted the right to use all the profile categories that the parent organization has
+    + grantAllLocations (boolean) - If `true`, the new sub-organization shall be granted the right to use all the locations that the parent organization has
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+    
+            {
+                "name": "Acme Team"
+            }
+
++ Response 201
+
+            {
+                "uid": "92389905-e729-46b4-a069-1de160999914",
+                "enabled": true,
+                "name": "Acme Team",
+                
+                "_embedded" : {
+                    "parent": {
+                        "uid": "708577f3-2522-41d8-8636-3f759b46f1b0",
+                        "name": "Acme Coporation",
+                        "_links" : {
+                            "self": { "href": "https://organizations.brevitycloud.net/organizations/708577f3-2522-41d8-8636-3f759b46f1b0" }
+                        }
+                    }
+                },
+                
+                "_links" : {
+                    "self": { "href": "https://organizations.brevitycloud.net/organizations/92389905-e729-46b4-a069-1de160999914" }
+                }
+            }
+    
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+
+# User [/organizations/{ouid}/users/{uid}]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+
+            {
+                "uid": "b4c14647-0613-4ddf-8349-a204b6e4faef",
+                "name": "John Smith",
+                "email": "john@somehwere.com",
+                "enabled": true,
+                "role": "ORG_ADMIN",
+                    
+                "links" : {
+                    "self": { "href": "https://organizations.brevitycloud.net/users/b4c14647-0613-4ddf-8349-a204b6e4faef" }
+                }
+            }
+            
+
+
+## Get a User [GET /organizations/{ouid}/users/{uid}{?validate_only}]
+
+Returns a specific `User` object that matches the provided uid. 
+
+User must have the `ORG_ADMIN` role or above, or be the actual User making the call.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + uid (string, required) - UUID of the User
+    + validate_only (boolean, optional) - Default false.  If set to true, will validate the token and return a lightweight version of the User object.
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [User][]
+    
++ Request Successful when validate_only set to true (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    + Body
+
+            {
+                "uid": "b4c14647-0613-4ddf-8349-a204b6e4faef"
+            }
+    
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Update a User [PATCH /organizations/{ouid}/users/{uid}]
+
+Updates a specific `User` object that matches the provided uid. 
+
+User must have the `ORG_ADMIN` role or above, or be the actual User making the call.
+
++ Parameters
+    + ouid (string, required) - The UID of the Organization
+    + uid (string, required) - Uid of the User
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+    + Body
+    
+            {
+                "name": "John Smith",
+                "email": "john@somehwere.com",
+                "enabled": true,
+                "password": "my secret password",
+            }
+            
++ Response 200
+
+    [User][]
+        
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Create a User [POST /organizations/{ouid}/users]
+
+Creates a new `User` object. 
+
+User must have the `ORG_ADMIN` role or above for the `Organization` in context.
+
++ Parameters
+    + ouid (string, required) - Uid of the parent Organization
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+    
+            {
+                "name": "John Smith",
+                "email": "john@somehwere.com",
+                "password": "my secret password",
+                "role": "ORG_USER"
+            }
+            
++ Response 201
+
+    [User][]
+    
++ Request with matching ETag (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 304
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+
+# Users [/organizations/{ouid}/users]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+    
+            {
+                "embedded": {
+                    "users": [ {
+                        "uid": "b4c14647-0613-4ddf-8349-a204b6e4faef",
+                        "name": "John Smith",
+                        "email": "john.smith@somehwere.com",
+                        "links" : {
+                            "self": { "href": "https://organizations.brevitycloud.net/users/b4c14647-0613-4ddf-8349-a204b6e4faef" }
+                        }
+                    }, {
+                        "uid": "aaf10f74-9bc7-4054-8310-3ea47c3b6793",
+                        "name": "Jane Smith",
+                        "email": "jane.smith@somehwere.com",
+                        "links" : {
+                            "self": { "href": "https://organizations.brevitycloud.net/users/aaf10f74-9bc7-4054-8310-3ea47c3b6793" }
+                        }
+                    }]
+                },
+                
+                "page": {
+                    "size": 2,
+                    "totalElements": 80,
+                    "totalPages": 40,
+                    "number": 3
+                },
+                "links" : {
+                    "self": { "href": "https://organizations.brevitycloud.net/organizations/a552a218-1bfa-4bea-80c7-6fb501523801/users?page=3&size=2" },
+                    "first": { "href": "https://organizations.brevitycloud.net/organizations/a552a218-1bfa-4bea-80c7-6fb501523801/users?page=1&size=2" },
+                    "prev": { "href": "https://organizations.brevitycloud.net/organizations/a552a218-1bfa-4bea-80c7-6fb501523801/users?page=2&size=2" },
+                    "next": { "href": "https://organizations.brevitycloud.net/organizations/a552a218-1bfa-4bea-80c7-6fb501523801/users?page=4&size=2" },
+                    "last": { "href": "https://organizations.brevitycloud.net/organizations/a552a218-1bfa-4bea-80c7-6fb501523801/users?page=40&size=2" }
+                }
+            }
+
+
+
+## Get all Users for an Organization [GET /organizations/{ouid}/users{?page,size,filter,sort}]
+
+Returns all `User` objects that belong to a specific `Organization`.
+
+Results may be filtered, sorted and/or paginated.
+
+User must have the `ORG_MANAGER` role or above the `Organization` in context.
+
++ Parameters
+    + ouid (string, required) - UUID of the parent Organization
+    + page (integer, optional) - See *pagination*.
+    + size (integer, optional) - See *pagination*.
+    + filter (string, optional) - See *filtering*.  
+    + sort (string, optional) - See *sorting*.  Available fields to sort by are: `name` and `email`.
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Users][]
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+
+# Group projects service
+
+Endpoint:   https://projects-stable.brevitycloud.net
+
+# Introduction
+
+The *projects* service is accountable for managing 'Projects'.  All calls to this service require a valid *jwt* token.
+
+
+# Project [/organizations/{ouid}/projects/{uid}]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+
+            {
+                "uid": "92389905-e729-46b4-a069-1de160999914",
+                "name": "Transatlantic workflow",
+                "bandwidth_limit": 300,
+                "encrypt_payload": false,
+                
+                "watermarks": {},
+                "created_at": 1457564976235,
+                "updated_at": 1459964542073,
+                
+                "enabled": true,
+                
+                "created_at": "",
+                "updated_at": "",
+                
+                "embedded": {
+                    "delivery_settings": [
+                        {
+                            "uid": "208303f2-6bed-4805-8be6-d65ad13807a2",
+                            "location": {
+                                "name": "West Coast Appliance"
+                            },
+                            "profile_category": {
+                                "name": "Web Video"   
+                            },
+                            "profile": { 
+                                "name": "H.264 (Baseline@L3.1) 2500 MP4 720p 23.98fps"   
+                            },
+                            "links" : {
+                                "self": { "href": "https://projects.brevitycloud.net/projects/92389905-e729-46b4-a069-1de160999914/delivery_setting/208303f2-6bed-4805-8be6-d65ad13807a2" }
+                            }
+                        }
+                    ],
+
+                    "members": [
+                        {
+                            "role": "OWNER",
+                            "embedded": {
+                                "user": {
+                                    "uid": "70b03ffd-bc7c-41e5-b329-c6c2bd4d0efc",
+                                    "name": "John Smith",
+                                    "links": {
+                                        "self": {
+                                            "href": "https://organizations.brevitycloud.net/organizations/95f64708-da3b-4885-bfa9-e5a47e94334b/users/70b03ffd-bc7c-41e5-b329-c6c2bd4d0efc
+                                        }
+                                    }
+                                }
+                            },
+                            "links": {
+                                "self": {
+                                    "href": "https://projects.brevityqa.net/organizations/95f64708-da3b-4885-bfa9-e5a47e94334b/projects/ca7b7d9d-9725-4cbe-ada5-f97451bd7927/users/70b03ffd-bc7c-41e5-b329-c6c2bd4d0efc"
+                                }
+                            }
+                        }
+                    ]
+                },
+                
+                    
+                "links" : {
+                    "self": { "href": "https://projects.brevitycloud.net/organizations/95f64708-da3b-4885-bfa9-e5a47e94334b/projects/92389905-e729-46b4-a069-1de160999914" },
+                    "members": { "href": "https://projects.brevitycloud.net/organizations/95f64708-da3b-4885-bfa9-e5a47e94334b/projects/92389905-e729-46b4-a069-1de160999914/users{?page,size,filter,sort}", "templated": true },
+                    "members": { "href": "https://projects.brevitycloud.net/organizations/95f64708-da3b-4885-bfa9-e5a47e94334b/projects/92389905-e729-46b4-a069-1de160999914/delivery_settings"},
+                    "owner": { "href": "https://organizations.brevitycloud.net/users/708577f3-2522-41d8-8636-3f759b46f1b0" },
+                    "jobs": { "href": "https://jobs.brevitycloud.net/projects/92389905-e729-46b4-a069-1de160999914/jobs{?page,size,filter,sort}", "templated": true }
+                }
+            }
+
+
+## Get a Project [GET /organizations/{ouid}/projects/{uid}]
+
+Returns a specific `Project` object based on the provided `uid`. 
+
+User must either have the `ORG_ADMIN` role and above for the related `Organization`, be the owner of the `Project` or be a member of the `Project`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + uid (string, required) - UUID of the Project
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Project][]
+
++ Request Project does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Create a Project [POST /organizations/{ouid}/projects]
+
+Creates a new `Project` object for the `Organization`. 
+
+User must be an `ORG_MANAGER` role or above for the `Organization` in context.
+
++ Parameters
+    + ouid (string, required) - The UUID of the `Organization`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "name": "Transatlantic workflow",
+                "bandwidth_limit": 300,
+                "encrypt_payload": false                
+            }
+            
++ Response 201
+
+    [Project][]
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Update a Project [PATCH /organizations/{ouid}/projects/{uid}]
+
+Updates a `Project` object based on the provided uid. 
+
+User must either have the `ORG_ADMIN` role or above for the `Organization`, be the owner of the `Project` or be a member of the `Project` with role `editor`.
+
++ Parameters
+    + ouid (string, required) - The UID of the Organization
+    + uid (string, required) - The UID of the `Project`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "name": "Transatlantic workflow",
+                "bandwidth_limit": 300,
+                "encrypt_payload": false,
+            }
+            
++ Response 200
+
+    [Project][]
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+
+
+
+# Projects [/organizations/{ouid}/projects]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+    
+            {
+                "embedded": {
+                    "projects": [ 
+                        {
+                            "uid": "92389905-e729-46b4-a069-1de160999914",
+                            "name": "Transatlantic workflow",
+                            "enabled": true;
+                            "updated_at": "2015-07-09 14:00:00",
+                            "links" : {
+                                "self": { "href": "https://projects.brevitycloud.net/organizations/95f64708-da3b-4885-bfa9-e5a47e94334b/projects/92389905-e729-46b4-a069-1de160999914" }
+                            }
+                        },{
+                            "uid": "9a8714e2-2285-481d-9cfd-32ec737ee17f",
+                            "name": "East coast to West coast workflow",
+                            "enabled": true;
+                            "updated_at": "2015-08-25 13:23:00",
+                            "links" : {
+                                "self": { "href": "https://projects.brevitycloud.net/organizations/95f64708-da3b-4885-bfa9-e5a47e94334b/projects/9a8714e2-2285-481d-9cfd-32ec737ee17f" }
+                            }
+                        }
+                    ]
+                },
+                
+                "page": {
+                    "size": 2,
+                    "totalElements": 80,
+                    "totalPages": 40,
+                    "number": 3
+                },
+                "links" : {
+                    "self": { "href": "https://projects.brevitycloud.net/organizations/95f64708-da3b-4885-bfa9-e5a47e94334b/projects?page=3&size=2" },
+                    "first": { "href": "https://projects.brevitycloud.net/organizations/95f64708-da3b-4885-bfa9-e5a47e94334b/projects?page=1&size=2" },
+                    "prev": { "href": "https://projects.brevitycloud.net/organizations/95f64708-da3b-4885-bfa9-e5a47e94334b/projects?page=2&size=2" },
+                    "next": { "href": "https://projects.brevitycloud.net/organizations/95f64708-da3b-4885-bfa9-e5a47e94334b/projects?page=4&size=2" },
+                    "last": { "href": "https://projects.brevitycloud.net/organizations/95f64708-da3b-4885-bfa9-e5a47e94334b/projects?page=40&size=2" }
+                }
+            }
+
+
+
+## Get all Projects for an Organization [GET /organizations/{ouid}/projects{?page,size,filter,sort}]
+
+Returns all `Project` objects for a specific `Organization`. 
+
+Results may be filtered, sorted and/or paginated.
+
+User must have the `ORG_ADMIN` role or above for the `Organization`.
+
++ Parameters
+    + ouid (string, required) - UUID of the parent Organization
+    + page (integer, optional) - See *pagination*.
+    + size (integer, optional) - See *pagination*.
+    + filter (string, optional) - See *filtering*.  
+    + sort (string, optional) - See *sorting*.  Available fields to sort by are: `createdAt`, `updatedAt` or `name`.
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Projects][]
+
++ Request Organization does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Get all Projects for a User [GET /organizations/{ouid}/users/{uid}/projects{?page,size,filter,sort}]
+
+Returns all `Project` objects that can be viewed by a specific `User`. 
+
+Results may be filtered, sorted and/or paginated.
+
+`User` must match the `User` in context, with results containing `Projects` where the `User` is a member of, or containing all `Projects`for the `User's` associated `Organization` where the `User` is an ORG_MANAGER or above.
+
++ Parameters
+    + ouid (string, required) - Uid of the Organization
+    + uid (string, required) - Uid of the parent User
+    + page (integer, optional) - See *pagination*.
+    + size (integer, optional) - See *pagination*.
+    + filter (string, optional) - See *filtering*.  
+    + sort (string, optional) - See *sorting*.  Available fields to sort by are: `createdAt`, `updatedAt` or `name`.
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Projects][]
+
++ Request User does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+
+
+
+# Delivery Setting [/organizations/{ouid}/projects/{puid}/delivery_settings/{uid}]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+
+            {
+                "uid": "208303f2-6bed-4805-8be6-d65ad13807a2",
+
+                "embedded": { {
+                    "profile": {
+                        "uid": "dbafda9c-f1a5-4141-aa94-ef922297439c",
+                        "name": "H.264 (Main@L4.0) 800 MOV 1080i 29.97fps",
+                        "links": {
+                            "self": {
+                                "href": "https://profiles.brevitycloud.net/organizations/05d6734b-c59c-4c0a-a576-1744b6fa3ce7/profiles/dbafda9c-f1a5-4141-aa94-ef922297439c"
+                            }
+                        }
+                    },
+                    "destination": {
+                        "uid": "23b476d0-ad8e-47ce-81ea-dde965408f8a",
+                        "name": "West Coast Appliance",
+                        "type": "LOCATION",
+                        "links": {
+                            "self": {
+                                "href": "https://locations.brevitycloud.net/organizations/05d6734b-c59c-4c0a-a576-1744b6fa3ce7/locations/23b476d0-ad8e-47ce-81ea-dde965408f8a"
+                            }
+                        },
+                        "location_type": "Engine"
+                    }
+                },
+                "profile_category": {
+                    "uid": "a685189b-759b-4e22-b7a3-17dbc277ee66",
+                    "name": "Web Video"   
+                },
+                "links" : {
+                    "self": { "href": "https://projects.brevitycloud.net/organizations/05d6734b-c59c-4c0a-a576-1744b6fa3ce7/projects/92389905-e729-46b4-a069-1de160999914/delivery_settings/208303f2-6bed-4805-8be6-d65ad13807a2" }
+                }
+            }
+
+
+## Get a Delivery Setting [GET /organizations/{ouid}/projects/{puid}/delivery_settings/{uid}]
+
+Returns a specific `DeliverySetting` object based on the provided `uid`. 
+
+User must either have the `ORG_ADMIN` role and above for the related `Organization`, or be a member of the `Project`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + puid (string, required) - UUID of the Project
+    + uid (string, required) - UUID of the Delivery Setting
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Delivery Setting][]
+
++ Request Delivery Setting does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Create a Delivery Setting [POST /organizations/{ouid}/projects/{puid}/delivery_settings]
+
+Creates a new `DeliverySetting` object for the `Project`. 
+
+User must be an `ORG_ADMIN` role or above for the `Organization` related to the `Project`, or be an `EDITOR` or above for the `Project`.
+
+Type can be either `Location` or 'Gateway' or `User` 
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + puid (string, required) - The UUID of the `Project`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+            
+            {
+                "destination": {
+                    "type": "LOCATION",
+                    "uid": "23b476d0-ad8e-47ce-81ea-dde965408f8a"
+                },
+                "profile": { 
+                    "uid": "4025b251-a7ca-4fed-8bd7-8c55fad58906"
+                }
+            }
+            
++ Response 201
+
+    [Delivery Setting][]
+    
++ Request invalid location or profile provided (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 400
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Update a Delivery Setting [PUT /organizations/{ouid}/projects/{puid}/delivery_settings/{uid}]
+
+Updates a `DeliverySetting` object based on the provided uid. 
+
+User must be an `ORG_ADMIN` role or above for the `Organization` related to the `Project`, or be an `EDITOR` or above for the `Project`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + puid (string, required) - The UUID of the `Project`
+    + uid (string, required) - The UUID of the `DeliverySetting`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+            
+            {
+            "destination": {
+                "type": "LOCATION":,
+                "uid": "23b476d0-ad8e-47ce-81ea-dde965408f8a"
+                },
+                "profile": { 
+                    "uid": "4025b251-a7ca-4fed-8bd7-8c55fad58906"
+                }
+            }
+            
++ Response 200
+
+    [Delivery Setting][]
+            
++ Request if any of the uids are invalid (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 400
+
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Delete a Delivery Setting [DELETE /organizations/{ouid}/projects/{puid}/delivery_settings/{uid}]
+
+Deletes a `DeliverySetting` object based on the provided uid. 
+
+User must be an `ORG_ADMIN` role or above for the `Organization` related to the `Project`, or be an `EDITOR` or above for the `Project`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the `Organization`
+    + puid (string, required) - The UUID of the `Project`
+    + uid (string, required) - The UUID of the `DeliverySetting`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
++ Request if projects or delivery setting do not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+
+# Delivery Settings [/organizations/{ouid}/projects/{puid}/delivery_settings]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+    
+            {
+                "embedded": {
+                    "delivery_settings": [ 
+                        {
+                            "uid": "208303f2-6bed-4805-8be6-d65ad13807a2",
+
+                            "embedded": { {
+                                "profile": {
+                                    "uid": "dbafda9c-f1a5-4141-aa94-ef922297439c",
+                                    "name": "H.264 (Main@L4.0) 800 MOV 1080i 29.97fps",
+                                    "links": {
+                                        "self": {
+                                            "href": "https://profiles.brevitycloud.net/organizations/05d6734b-c59c-4c0a-a576-1744b6fa3ce7/profiles/dbafda9c-f1a5-4141-aa94-ef922297439c"
+                                        }
+                                    }
+                                },
+                                "destination": {
+                                    "uid": "23b476d0-ad8e-47ce-81ea-dde965408f8a",
+                                    "name": "West Coast Appliance",
+                                    "type": "LOCATION",
+                                    "links": {
+                                        "self": {
+                                            "href": "https://locations.brevitycloud.net/organizations/05d6734b-c59c-4c0a-a576-1744b6fa3ce7/locations/23b476d0-ad8e-47ce-81ea-dde965408f8a"
+                                        }
+                                    },
+                                    "location_type": "Engine"
+                                }
+                            },
+                            "profile_category": {
+                                "uid": "a685189b-759b-4e22-b7a3-17dbc277ee66",
+                                "name": "Web Video"   
+                            },
+                            "links" : {
+                                "self": { "href": "https://projects.brevitycloud.net/organizations/05d6734b-c59c-4c0a-a576-1744b6fa3ce7/projects/92389905-e729-46b4-a069-1de160999914/delivery_settings/208303f2-6bed-4805-8be6-d65ad13807a2" }
+                            }
+                        }
+                    ]
+                },
+
+                "links" : {
+                    "self": { "href": "https://projects.brevitycloud.net/organizations/05d6734b-c59c-4c0a-a576-1744b6fa3ce7/projects/92389905-e729-46b4-a069-1de160999914/delivery_settings" }
+                }
+            }
+
+
+
+## Get all Delivery Settings for a Project [GET /organizations/{ouid}/projects/{puid}/delivery_settings]
+
+Returns all `DeliverySetting` objects for a specific `Project`. 
+
+User must have the `ORG_ADMIN` role or above for the `Project`, or be an `EDITOR` or above for the `Project`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + puid (string, required) - UUID of the Project
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Delivery Settings][]
+
++ Request Project does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+
+
+
+# Member [/organizations/{ouid}/projects/{puid}/users/{uid}]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+
+            {
+                "role": "OWNER",
+
+                "embedded": {
+                    "user": {
+                        "uid": "c939d9e5-3207-4f09-ad5f-e84066d0eea5",
+                        "name": "John Smith",
+
+                        "links" : {
+                            "self": { "href": "https://organizations.brevitycloud.net/organizations/05d6734b-c59c-4c0a-a576-1744b6fa3ce7/users/c939d9e5-3207-4f09-ad5f-e84066d0eea5" }
+                        }
+                    }
+                },
+
+                "links" : {
+                    "self": { "href": "https://projects.brevitycloud.net/organizations/05d6734b-c59c-4c0a-a576-1744b6fa3ce7/projects/92389905-e729-46b4-a069-1de160999914/users/208303f2-6bed-4805-8be6-d65ad13807a2" }
+                }
+            }
+
+
+## Get a Member [GET /organizations/{ouid}/projects/{puid}/users/{uid}]
+
+Returns a specific `Member` object based on the provided `uid`. 
+
+User must either have the `ORG_ADMIN` role and above for the related `Organization`, or be an `EDITOR` or above for the `Project`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + puid (string, required) - UUID of the Project
+    + uid (string, required) - UUID of the User
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Member][]
+
++ Request Member does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+## Delete a Member [DELETE /organizations/{ouid}/projects/{puid}/users/{uid}]
+
+Deletes a specific `Member` object based on the provided `uid`. 
+
+User must either have the `ORG_ADMIN` role and above for the related `Organization`, or be a member of the `Project`.
+
++ Parameters
+    + ouid (string, required) - UUID if Organization
+    + puid (string, required) - UUID of the Project
+    + uid (string, required) - UUID of the User
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Member][]
+
++ Request Member does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Create a Member [POST /organizations/{ouid}/projects/{puid}/users]
+
+Creates a new `Member` object for the `Project`. 
+
+User must be an `ORG_ADMIN` role or above for the `Organization` related to the `Project`, or be an `EDITOR` or above for the `Project`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + puid (string, required) - The UUID of the `Project`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+            
+            {
+                "role": "EDITOR",                
+                "user": {
+                    "uid": "23b476d0-ad8e-47ce-81ea-dde965408f8a"
+                }
+            }
+            
++ Response 201
+
+    [Member][]
+    
++ Request with invalid userid (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 400
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Update a Member [PATCH /organizations/{ouid}/projects/{puid}/users/{uid}]
+
+Updates a `Member` object based on the provided `uid`. 
+
+User must be an `ORG_ADMIN` role or above for the `Organization` related to the `Project`, or be an `EDITOR` or above for the `Project`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + puid (string, required) - The UUID of the `Project`
+    + uid (string, required) - The UUID of the `Member`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+            
+            {
+                "role": "EDITOR"
+            }
+            
++ Response 200
+
+    [Member][]
+            
++ Request if the role is invalid (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 400
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+
+# Members [/organizations/{ouid}/projects/{puid}/users]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+    
+            {
+                "embedded": {
+                    "members": [ 
+                        {                       
+                            "uid": "208303f2-6bed-4805-8be6-d65ad13807a2",
+                            "role": "OWNER",
+
+                            "embedded": {
+                                "user": {
+                                    "uid": "c939d9e5-3207-4f09-ad5f-e84066d0eea5",
+                                    "name": "Dean Hart",
+
+                                    "links" : {
+                                        "self": { "href": "https://organizations.brevitycloud.net/organizations/05d6734b-c59c-4c0a-a576-1744b6fa3ce7/users/c939d9e5-3207-4f09-ad5f-e84066d0eea5" }
+                                    }
+                                }
+                            },
+
+                            "links" : {
+                                "self": { "href": "https://projects.brevitycloud.net/organizations/05d6734b-c59c-4c0a-a576-1744b6fa3ce7/projects/92389905-e729-46b4-a069-1de160999914/users/208303f2-6bed-4805-8be6-d65ad13807a2" }
+                            }
+                        }
+                    ]
+                },
+
+                "links" : {
+                    "self": { "href": "https://projects.brevitycloud.net/organizations/05d6734b-c59c-4c0a-a576-1744b6fa3ce7/projects/92389905-e729-46b4-a069-1de160999914/users" },
+                ]
+            }
+
+
+
+## Get all Members for a Project [GET /organizations/{ouid}/projects/{puid}/users]
+
+Returns all `Member` objects for a specific `Project`. 
+
+User must have the `ORG_ADMIN` role or above for the `Project`, or be an `EDITOR` or above for the `Project`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + puid (string, required) - UUid of the Project
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Members][]
+
++ Request Project does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+
+
+
+
+
+
+
+# Group profiles service
+
+Endpoint:   https://profiles-stable.brevitycloud.net
+
+# Introduction
+
+The *profiles* service is accountable for managing preset transcoding 'Profiles'.  All calls to this service require a valid *jwt* token.
+
+
+# Profile Category [profilecategories/{uid}]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+
+            {
+                "uid": "92389905-e729-46b4-a069-1de160999914",
+                "name": "Web Video", 
+                "global": true,
+
+                "links" : {
+                    "self": { "href": "https://profiles.brevitycloud.net/profilecategories/92389905-e729-46b4-a069-1de160999914" },
+                    "profiles": { "href": "https://profiles.brevitycloud.net/organizations/19e678ed-0e9a-498b-8a59-0728fdc98d16/profilecategories/92389905-e729-46b4-a069-1de160999914/profiles{?page,size,filter,sort}", "templated": true }
+                }
+            }
+
+
+
+## Get a Profile Category [GET /profilecategories/{uid}]
+
+Returns a specific `ProfileCategory` object based on the provided `uid`. 
+
+User must have the `ORG_MANAGER` role or above for an `Organization` that is allowed to use the `ProfileCategory`.
+
++ Parameters
+    + uid (string, required) - UUID of the ProfileCategory
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    + Body
+
+            {                
+                "name": "Web Video"
+            }
+
++ Request Profile Category does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+
+
+# Profile Categories [/organizations/{ouid}/profilecategories]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+    
+            {
+                "embedded": {
+                    "preset_categories": [ 
+                        {
+                            "uid": "92389905-e729-46b4-a069-1de160999914",
+                            "name": "Web Video",
+                            "enabled": true,
+
+                            "links" : {
+                                "self": { "href": "https://profiles.brevitycloud.net/profilecategories/92389905-e729-46b4-a069-1de160999914" },
+                                "profiles": { "href": "https://profiles.brevitycloud.net/organizations/19e678ed-0e9a-498b-8a59-0728fdc98d16/profilecategories/92389905-e729-46b4-a069-1de160999914/profiles{?page,size,filter,sort}", "templated": true }
+                            }
+                        }, 
+                        {
+                            "uid": "b77b9ddd-8369-4a20-91d5-273c1dedd0d6",
+                            "name": "4k", 
+                            "enabled": true,
+
+                            "links" : {
+                                "self": { "href": "https://profiles.brevitycloud.net/profilecategories/b77b9ddd-8369-4a20-91d5-273c1dedd0d6" },
+                                "profiles": { "href": "https://profiles.brevitycloud.net/organizations/19e678ed-0e9a-498b-8a59-0728fdc98d16/profilecategories/b77b9ddd-8369-4a20-91d5-273c1dedd0d6/profiles{?page,size,filter,sort}", "templated": true }
+                            }
+                        }
+                    ]
+                },
+
+                "links" : {
+                    "self": { "href": "https://profiles.brevitycloud.net/organizations/19e678ed-0e9a-498b-8a59-0728fdc98d16/profilecategories" }
+                ]
+            }
+
+
+
+## Get all Profile Categories for a specific Organization [GET /organizations/{uid}/profilecategories]
+
+Returns all `ProfileCategory` objects that the `Organization` is authorized to use.
+
+User must have the `ORG_MANAGER` role or above for an `Organization` related to the `ProfileCategory`
+
++ Parameters
+    + uid (string, required) - UUID of the Organization
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Profile Categories][]
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Grant an Organization permission to use a Profile Category [PUT /organizations/{ouid}/profilecategories/{puid}]
+
+Allows the `Organization` permission to use all `Profiles` of the `Profile Category`. 
+
+User must be an `ORG_ADMIN` or above for the organization in context.
+
++ Parameters
+    + ouid (string, required) - The UUID of the `Organization`
+    + puid (string, required) - The UUID of the `Profile Category`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    + Body
+
+            {                
+                "name": "Web Video"
+            }
+    
++ Request Organization or Profile Category does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Revoke an Organization's permission to use a Profile Category [DELETE /organizations/{ouid}/profilecategories/{puid}]
+
+Denies an `Organization` permission to use all `Profiles` of the `Profile Category`. 
+
+User must be an `ORG_ADMIN` or above for the organization in context.
+
++ Parameters
+    + ouid (string, required) - The UUID of the `Organization`
+    + puid (string, required) - The UUID of the `Profile Category`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    + Body
+
+            {                
+                "name": "Web Video"
+            }
+    
++ Request Organization or Profile Category does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Create a Profile Category [POST /organizations/{ouid}/profilecategories]
+
+Creates a new `Profile Category` object for the `Organization`. 
+
+User must be an `ORG_MANAGER` role or above for the `Organization` in context.
+
++ Parameters
+    + ouid (string, required) - The UUID of the `Organization`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {                
+                "name": "Web Video"
+            }
+            
++ Response 201
+
+    + Body
+
+            {                
+                "name": "Web Video"
+            }
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+# Profile [/organizations/{ouid}/profiles/{uid}]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+    
+            {
+                "uid": "409b46e0-ea2d-479f-9edd-3cce3a5a02d2",
+                "name: "MOV 1080p/23.976 DNxHD 36",
+
+                "enabled": true,
+                "global": true,
+                
+                "parent_uid": "6860b4f5-cf4e-4376-b978-2e829c02b4f3",
+                "parent_name": "MOV 1080p/23.976 DNxHD",
+
+                "width": 1920,
+                "height": 1080,
+                "video_bitrate_kbps": 36000,
+                "audio_bitrate_kbps": 48,
+                "frame_rate_fps": 23.976,
+                "anchor_timecode": "11:34:56:21",
+                "anchor_channel_mapping": "1,2,0",
+                
+                "format_wrapper" : 
+                    "uid": "4bffaac0-9116-4ee9-973e-48abf453ade7",
+                    "name": "Avid MXF (OP-Atom)"    
+                },
+
+                "video_compression" : {
+                    "uid": "9f59a0d7-cfba-4338-afb0-8ef2e00c1249",
+                    "name": "DNxHD (10bit)"    
+                },
+
+                "audio_compression" : {
+                    "uid": "5d55d0d6-53cf-47c5-aef9-b85552b01552",
+                    "name": "AAC 44.1kHz"    
+                },
+
+                "quality" : {
+                    "name": "No change"                
+                },
+
+                "field_order" : {
+                    "uid": "077ca2e2-8748-45f5-a9de-af3d3dc4b471",
+                    "name": "N/A - Not Interlaced"    
+                },
+
+                "links" : {
+                    "self": { "href": "https://profiles.brevitycloud.net/organizations/19e678ed-0e9a-498b-8a59-0728fdc98d16/profiles/409b46e0-ea2d-479f-9edd-3cce3a5a02d2" },
+                    "extended": { "href": "https://profiles.brevitycloud.net/organizations/19e678ed-0e9a-498b-8a59-0728fdc98d16/profiles/409b46e0-ea2d-479f-9edd-3cce3a5a02d2?view=extended"},
+                    "parent": { "href": "https://profiles.brevitycloud.net/organizations/19e678ed-0e9a-498b-8a59-0728fdc98d16/profiles/6860b4f5-cf4e-4376-b978-2e829c02b4f3" }
+                }
+            }
+
+
+
+## Get a Profile [GET /organizations/{ouid}/profiles/{uid}{?view}]
+
+Returns a specific `Profile` object based on the provided `uid`. 
+
+User must have the `ORG_MANAGER` role or above for an `Organization` that has permission to use the `Profile`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + uid (string, required) - UUID of the Profile
+    + view (string, optional) - If none supplied, returns the default view.  
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Profile][]
+
+
++ Request Profile does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Create a new Profile [POST /organizations/{ouid}/profilecategories/{puid}/profiles]
+
+Creates a new `Profile` object categorized as the supplied `Profile Category` for the `Organization`. 
+
+User must be an `ORG_MANAGER` role or above for the `Organization` in context.
+
+The `Organization` must have permission to use the provided `Profile Category`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the `Organization`
+    + puid (string, required) - The UUID of the `Profile Category`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+    
+            {
+                "name: "MOV 1080p/23.976 DNxHD 36",
+                "parent_uid": "6860b4f5-cf4e-4376-b978-2e829c02b4f3",
+                
+                "width": 1920,
+                "height": 1080,
+                "video_bitrate_kbps": 36000,
+                "audio_bitrate_kbps": 48,
+                "frame_rate_fps": 23.976,
+                "anchor_timecode": "11:34:56:21",
+                "anchor_channel_mapping": "1,2,0",
+
+                "quality" : {
+                    "name": "No change"                
+                }
+            }
+            
++ Response 201
+
+    [Profile][]
+    
++ Request Organization not permitted to use Profile Category (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 403
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Update a Profile [PATCH /organizations/{ouid}/profiles/{uid}]
+
+Updates a `Profile` object based off the provided uid. 
+
+User must be a `SYS-ADMIN` in order to update a _global_ `Profile`.
+
+User must have the `ORG_MANAGER` role or above for the `Organization` that owns a `Profile` for _non-global_ `Profiles`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + uid (string, required) - The UUID of the `Profile`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+    
+            {
+                "name: "MOV 1080p/23.976 DNxHD 36",
+                
+                "parent_uid": "6860b4f5-cf4e-4376-b978-2e829c02b4f3",
+
+                "width": 1920,
+                "height": 1080,
+                "video_bitrate_kbps": 36000,
+                "audio_bitrate_kbps": 48,
+                "frame_rate_fps": 23.976,
+                "anchor_timecode": "11:34:56:21",
+                "anchor_channel_mapping": "1,2,0",
+
+                "quality" : {
+                    "name": "No change"                
+                }
+            }
+            
++ Response 200
+
+    [Profile][]
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+# Profiles [/organizations/{ouid}/profilecategories/{puid}/profiles]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+    
+            {
+                "embedded": {
+                    "profiles": [ 
+                        {
+                            "uid": "92389905-e729-46b4-a069-1de160999914",
+                            "name": "h.264 1080p",
+                            "enabled": true,
+                            "global": true,
+                            "width": 1920,
+                            "height": 1080,
+                            "video_kbps": 3500,
+                            "audio_kbps": 128,
+                            "fps": 29.97,
+
+                            "links" : {
+                                "self": { "href": "https://profiles.brevitycloud.net/organizations/19e678ed-0e9a-498b-8a59-0728fdc98d16/profiles/92389905-e729-46b4-a069-1de160999914" }
+                            }
+                        }, 
+                        {
+                            "uid": "b77b9ddd-8369-4a20-91d5-273c1dedd0d6",
+                            "name": "4k", 
+                            "enabled": true,
+                            "global": true,
+                            "width": 1920,
+                            "height": 1080,
+                            "video_kbps": 3500,
+                            "audio_kbps": 128,
+                            "fps": 29.97,
+
+                            "links" : {
+                                "self": { "href": "https://profiles.brevitycloud.net/organizations/19e678ed-0e9a-498b-8a59-0728fdc98d16/profiles/b77b9ddd-8369-4a20-91d5-273c1dedd0d6" }
+                            }
+                        }
+                    ]
+                },
+                
+                "page": {
+                    "size": 2,
+                    "totalElements": 80,
+                    "totalPages": 40,
+                    "number": 3
+                },
+                
+                "links" : {
+                    "self": { "href": "https://profiles.brevitycloud.net/organizations/1e2f93bc-8d0d-4c27-83a3-716fc317e97d/profilescategories/659d4ec6-04bf-47fa-9758-81935bae22c4/profiles?page=3&size=2" },
+                    "first": { "href": "https://profiles.brevitycloud.net/organizations/1e2f93bc-8d0d-4c27-83a3-716fc317e97d/profilescategories/659d4ec6-04bf-47fa-9758-81935bae22c4/profiles?page=1&size=2" },
+                    "prev": { "href": "https://profiles.brevitycloud.net/organizations/1e2f93bc-8d0d-4c27-83a3-716fc317e97d/profilescategories/659d4ec6-04bf-47fa-9758-81935bae22c4/profiles?page=2&size=2" },
+                    "next": { "href": "https://profiles.brevitycloud.net/organizations/1e2f93bc-8d0d-4c27-83a3-716fc317e97d/profilescategories/659d4ec6-04bf-47fa-9758-81935bae22c4/profiles?page=4&size=2" },
+                    "last": { "href": "https://profiles.brevitycloud.net/organizations/1e2f93bc-8d0d-4c27-83a3-716fc317e97d/profilescategories/659d4ec6-04bf-47fa-9758-81935bae22c4/profiles?page=40&size=2" }
+                ]
+            }
+
+
+
+## Get all Profiles  for a specific Organization and Category [GET /organizations/{ouid}/profilecategories/{puid}/profiles]
+
+Returns all `Profile` objects for the provided `ProfileCategory` that the `Organization` is authorized to use.
+
+User must have the `ORG_MANAGER` role or above for an `Organization` related to the `ProfileCategory`
+
++ Parameters
+    + ouid (string, required) - UUID of the Organization
+    + puid (string, required) - UUID of the ProfileCategory
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Profiles][]
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+
+
+
+# Group files service
+
+Endpoint:   https://files-stable.brevitycloud.net
+
+# Introduction
+
+The *files* service is accountable for managing files that have been processed through the Brevity platform.  
+
+Only `GET` methods are exposed via the REST API of this service. 
+
+All calls to this service require a valid *jwt* token.
+
+
+# File [/organizations/{ouid}/locations/{luid}/files/{uid}]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+
+            {
+                "uid": "5077c522-3136-4e43-9956-7d314348ade2",
+                "name": "708577f3-2522-41d8-8636-3f759b46f1b0",
+                "mime_type": "application/video",
+                "size": 1293291
+                "alias": "Mon Feb 29 04:53:48 2016",
+                "path": "/files/c087175b-8109-4fa9-9379-8f4a52664f47/bb5c611c-24ac-4e5c-bb3d-5f55fc154a87/3_min_big_bunny.mp4",
+                "location_uid": "bb4873ae-d850-41d1-b01b-83c84ae7368e",
+                "location_name": "CSE 02",
+                    
+                "links" : {
+                    "self": { "href": "https://files.brevitycloud.net/organizations/2687ad52-5fdd-4a7d-b73f-5ac7e176dd82/locations/bb4873ae-d850-41d1-b01b-83c84ae7368e/files/92389905-e729-46b4-a069-1de160999914" },
+                    "parent": {
+                      "href": "https://files.brevitycloud.net/organizations/2687ad52-5fdd-4a7d-b73f-5ac7e176dd82/locations/bb4873ae-d850-41d1-b01b-83c84ae7368e/files/5077c522-3136-4e43-9956-7d314348ade2"
+                    }
+                }
+            }
+
+## Get a File [GET /organizations/{ouid}/locations/{luid}/files/{uid}]
+
+Returns a specific `File` object based on the provided `uid`. 
+
+File permissions are based on the calling user's role for the `Orrganization` in context:
+- ORG_USER:
+    - may only access files that they have created
+- ORG_MANAGER:
+    - can access files that they have created
+    - can access files associated with a project that they are a member of
+    - virgin files associated with the location/organization (no project association)
+- ORG_ADMIN / SYS_ADMIN:
+    - can access any file for the organization located on the location
+ 
++ Parameters
+    + ouid (string, required) - UUID of the Organization
+    + luid (string, required) - UUID of the Location    
+    + uid (string, required) - Either the UUID of the File, or the full file path, including filename, base64 encoded
+
++ Request Successful, returning a File (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [File][]
+
++ Request Successful, returning a Directory (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    + Body
+
+            {
+                "uid": "5077c522-3136-4e43-9956-7d314348ade2",
+                "name": "708577f3-2522-41d8-8636-3f759b46f1b0",
+                "alias": "Mon Feb 29 04:53:48 2016",
+                "path": "/files/c087175b-8109-4fa9-9379-8f4a52664f47/bb5c611c-24ac-4e5c-bb3d-5f55fc154a87",
+                "location_uid": "bb4873ae-d850-41d1-b01b-83c84ae7368e",
+                "location_name": "CSE 02",
+
+                "_embedded": {
+                    "children": [{
+                        "uid": "bb5c611c-24ac-4e5c-bb3d-5f55fc154a87",
+                        "name": "3_min_big_bunny.mp4",
+                        "mime_type": "video/quicktime",
+                        "size": 30612756,
+                        "_links": {
+                            "self": {
+                                "href": "/organizations/513af6e9-5c70-44f3-b620-20ad3edc8232/locations/bb4873ae-d850-41d1-b01b-83c84ae7368e/files/bb5c611c-24ac-4e5c-bb3d-5f55fc154a87"
+                            }
+                        },
+                        "alias": "Mon Feb 29 04:53:48 2016"
+                    }
+                ]},
+                    
+                "links" : {
+                    "self": { "href": "https://files.brevitycloud.net/organizations/2687ad52-5fdd-4a7d-b73f-5ac7e176dd82/locations/bb4873ae-d850-41d1-b01b-83c84ae7368e/files/92389905-e729-46b4-a069-1de160999914" },
+                    "parent": {
+                      "href": "https://files.brevitycloud.net/organizations/2687ad52-5fdd-4a7d-b73f-5ac7e176dd82/locations/bb4873ae-d850-41d1-b01b-83c84ae7368e/files/L2ZpbGVzL2MwODcxNzViLTgxMDktNGZhOS05Mzc5LThmNGE1MjY2NGY0Nw==""
+                    }
+                }
+            }
+
++ Request File does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+
+
+# Group jobs service
+
+Endpoint:   https://jobs-stable.brevitycloud.net
+
+# Introduction
+
+The *jobs* service is accountable for managing `Jobs` including its `Tasks`.  All calls to this service require a valid *jwt* token.
+
+
+# Job [/organizations/{ouid}/jobs/{juid}]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+
+            {
+                "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                "type": "video/mp4",
+                "status": "SUCCEEDED",
+
+                "percent_complete": 1,
+                
+                "created_at": "2016-01-30T02:11:47-0500",
+                
+                "embedded": {
+                    "project": {
+                        "uid": "92389905-e729-46b4-a069-1de160999914",
+                        "name": "Transatlantic workflow",
+                        "links" : {
+                            "self": { "href": "https://projects.brevitycloud.net/organizations/92389905-e729-46b4-a069-1de160999914/projects/92389905-e729-46b4-a069-1de160999914" }
+                        }
+                    },
+                    "source_file": {
+                        "uid": "eda423a1-69fa-4ea5-be92-462208284b3a",
+                        "name": "video.mov",
+                        "size": 620794,
+                        "storage": {
+                            "path": "/files/513af6e9-5c70-44f3-b620-20ad3edc8232/ca7b7d9d-9725-4cbe-ada5-f97451bd7927/7ab33f4b-4e43-4a78-a3b3-2807376a3961/source",
+                            "location_uid": "3f902984-8e9d-4927-ac7a-1c30bcc2b13c",
+                            "location_name": "West Coast Engine"
+                        },
+                        "_links": {
+                            "self": {
+                                "href": "https://files.brevitycloud.net/organizations/513af6e9-5c70-44f3-b620-20ad3edc8232/locations/3f902984-8e9d-4927-ac7a-1c30bcc2b13c/files/eda423a1-69fa-4ea5-be92-462208284b3a"
+                            }
+                        },
+                        "mime_type": "video/quicktime",
+                        "created_at": "2016-08-09T00:19:38.219+0000",
+                        "updated_at": "2016-08-09T00:19:38.219+0000",
+                        "probe_info": {
+                            "mtime": "2016-08-09T00:19Z",
+                            "format": {
+                                "bit_rate": 522315,
+                                "duration": 9.508333,
+                                "filename": "/files/513af6e9-5c70-44f3-b620-20ad3edc8232/ca7b7d9d-9725-4cbe-ada5-f97451bd7927/7ab33f4b-4e43-4a78-a3b3-2807376a3961/source/video.mov",
+                                "format_long_name": "QuickTime / MOV",
+                                "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+                                "mime_type": "video/quicktime",
+                                "nb_streams": 2,
+                                "size": 620794,
+                                "start_time": 0.0,
+                                "streamable": true,
+                                "streams": [
+                                    {
+                                        "codec_type": "audio",
+                                        "rframeRate": "NaN",
+                                        "index": 0,
+                                        "codec_long_name": "AAC (Advanced Audio Coding)",
+                                        "codec_name": "aac",
+                                        "codec_tag": "0x6134706d",
+                                        "codec_tag_string": "mp4a",
+                                        "codec_time_base": "1/32000",
+                                        "codec_type": "audio",
+                                        "metadata": {
+                                            "creation_time": "2006-03-11 10:51:48",
+                                            "handler_name": "Apple Alias Data Handler",
+                                            "language": "eng"
+                                        },
+                                        "avg_frame_rate": "0/0",
+                                        "bits_per_sample": 0,
+                                        "channels": 2,
+                                        "duration": 9.536,
+                                        "nb_frames": 298,
+                                        "r_frame_rate": "NaN",
+                                        "sample_rate": 32000,
+                                        "start_time": 0.0,
+                                        "time_base": "1/32000"
+                                    },
+                                    {
+                                        "codec_type": "video",
+                                        "rframeRate": 29.97,
+                                        "index": 1,
+                                        "codec_long_name": "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10",
+                                        "codec_name": "h264",
+                                        "codec_tag": "0x31637661",
+                                        "codec_tag_string": "avc1",
+                                        "codec_time_base": "50/2997",
+                                        "codec_type": "video",
+                                        "metadata": {
+                                            "creation_time": "2006-03-11 10:51:48",
+                                            "handler_name": "Apple Alias Data Handler",
+                                            "language": "eng",
+                                            "encoder": "H.264"
+                                        },
+                                        "avg_frame_rate": "2997/100",
+                                        "bit_rate": 515142,
+                                        "display_aspect_ratio": "0:1",
+                                        "duration": 9.50951,
+                                        "has_b_frames": 0,
+                                        "height": 333,
+                                        "level": 22,
+                                        "nb_frames": 285,
+                                        "pix_fmt": "yuv420p",
+                                        "r_frame_rate": 29.97,
+                                        "sample_aspect_ratio": "0:1",
+                                        "start_time": 0.0,
+                                        "time_base": "1/2997",
+                                        "width": 500
+                                    }
+                                ]
+                            },
+                            "metadata": {
+                                "creation_time": "2006-03-11 10:51:48",
+                                "major_brand": "qt",
+                                "minor_version": "537199360",
+                                "compatible_brands": "qt"
+                            },
+                            "num_files": 1,
+                            "size": 620794
+                        }
+                    },
+                    
+                    "deliveries": [{
+                        "uid": "208303f2-6bed-4805-8be6-d65ad13807a2",
+                        "destination": {
+                            "uid": "23b476d0-ad8e-47ce-81ea-dde965408f8a",
+                            "name": "West Coast Appliance",
+                            "type": "LOCATION"
+                        },
+                        "profile": { 
+                            "uid": "4025b251-a7ca-4fed-8bd7-8c55fad58906",
+                            "name": "H.264 (Baseline@L3.1) 2500 MP4 720p 23.98fps"   
+                        },
+                        "status": "READY",
+                        "files": [
+                            {
+                                "uid": "eda423a1-69fa-4ea5-be92-462208284b3a",
+                                "name": "video.mov",
+                                "size": 620794,
+                                "storage": {
+                                    "path": "/files/513af6e9-5c70-44f3-b620-20ad3edc8232/ca7b7d9d-9725-4cbe-ada5-f97451bd7927/7ab33f4b-4e43-4a78-a3b3-2807376a3961/source",
+                                    "location_uid": "3f902984-8e9d-4927-ac7a-1c30bcc2b13c",
+                                    "location_name": "West Coast Engine"
+                                },
+                                "_links": {
+                                    "self": {
+                                        "href": "https://files.brevitycloud.net/organizations/513af6e9-5c70-44f3-b620-20ad3edc8232/locations/3f902984-8e9d-4927-ac7a-1c30bcc2b13c/files/eda423a1-69fa-4ea5-be92-462208284b3a"
+                                    }
+                                },
+                                "mime_type": "video/quicktime",
+                                "created_at": "2016-08-09T00:19:38.219+0000",
+                                "updated_at": "2016-08-09T00:19:38.219+0000",
+                                "probe_info": {
+                                    "mtime": "2016-08-09T00:19Z",
+                                    "format": {
+                                        "bit_rate": 522315,
+                                        "duration": 9.508333,
+                                        "filename": "/files/513af6e9-5c70-44f3-b620-20ad3edc8232/ca7b7d9d-9725-4cbe-ada5-f97451bd7927/7ab33f4b-4e43-4a78-a3b3-2807376a3961/source/video.mov",
+                                        "format_long_name": "QuickTime / MOV",
+                                        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+                                        "mime_type": "video/quicktime",
+                                        "nb_streams": 2,
+                                        "size": 620794,
+                                        "start_time": 0.0,
+                                        "streamable": true,
+                                        "streams": [
+                                            {
+                                                "codec_type": "audio",
+                                                "rframeRate": "NaN",
+                                                "index": 0,
+                                                "codec_long_name": "AAC (Advanced Audio Coding)",
+                                                "codec_name": "aac",
+                                                "codec_tag": "0x6134706d",
+                                                "codec_tag_string": "mp4a",
+                                                "codec_time_base": "1/32000",
+                                                "codec_type": "audio",
+                                                "metadata": {
+                                                    "creation_time": "2006-03-11 10:51:48",
+                                                    "handler_name": "Apple Alias Data Handler",
+                                                    "language": "eng"
+                                                },
+                                                "avg_frame_rate": "0/0",
+                                                "bits_per_sample": 0,
+                                                "channels": 2,
+                                                "duration": 9.536,
+                                                "nb_frames": 298,
+                                                "r_frame_rate": "NaN",
+                                                "sample_rate": 32000,
+                                                "start_time": 0.0,
+                                                "time_base": "1/32000"
+                                            },
+                                            {
+                                                "codec_type": "video",
+                                                "rframeRate": 29.97,
+                                                "index": 1,
+                                                "codec_long_name": "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10",
+                                                "codec_name": "h264",
+                                                "codec_tag": "0x31637661",
+                                                "codec_tag_string": "avc1",
+                                                "codec_time_base": "50/2997",
+                                                "codec_type": "video",
+                                                "metadata": {
+                                                    "creation_time": "2006-03-11 10:51:48",
+                                                    "handler_name": "Apple Alias Data Handler",
+                                                    "language": "eng",
+                                                    "encoder": "H.264"
+                                                },
+                                                "avg_frame_rate": "2997/100",
+                                                "bit_rate": 515142,
+                                                "display_aspect_ratio": "0:1",
+                                                "duration": 9.50951,
+                                                "has_b_frames": 0,
+                                                "height": 333,
+                                                "level": 22,
+                                                "nb_frames": 285,
+                                                "pix_fmt": "yuv420p",
+                                                "r_frame_rate": 29.97,
+                                                "sample_aspect_ratio": "0:1",
+                                                "start_time": 0.0,
+                                                "time_base": "1/2997",
+                                                "width": 500
+                                            }
+                                        ]
+                                    },
+                                    "metadata": {
+                                        "creation_time": "2006-03-11 10:51:48",
+                                        "major_brand": "qt",
+                                        "minor_version": "537199360",
+                                        "compatible_brands": "qt"
+                                    },
+                                    "num_files": 1,
+                                    "size": 620794
+                                }
+                            }
+                        ],
+                        "links" : {
+                            "self": { "href": "https://projects.brevitycloud.net/organizations/92389905-e729-46b4-a069-1de160999914/projects/2f57f2a3-ad07-40d7-8140-8e4b443379cc/delivery_settings/208303f2-6bed-4805-8be6-d65ad13807a2"}
+                        },
+                        "completed_at": "2016-08-09T00:19:49.710+0000"
+                    }]
+                },
+                    
+                "links" : {
+                    "self": { "href": "https://jobs.brevitycloud.net//organizations/92389905-e729-46b4-a069-1de160999914/jobs/ba3109cf-6163-4972-a3b2-7d4ca4efb407?includeFileDetails=true" }
+                },
+                
+            }
+
+
+## Get a Job [GET /organizations/{organizationId}/jobs/{jobId}{?includeFileDetails}]
+
+Returns a specific `Job` object based on the provided `jobId `. 
+
+User must either have the `ORG_ADMIN` role and above for the related `Organization`, be the owner of the `Project` or be a member of the `Project` associated with the `Job`.
+
++ Parameters
+    + organizationId (string, required) - UUID of the Organization
+    + jobId (string, required) - UUID of the Job
+    + includeFileDetails (boolean, optional) - Default false.  If set to true, will include file probe and additional file details in the response
+
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Job][]
+
++ Request Job does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Create a Job [POST /organizations/{organizationId}/projects/{projectId}/jobs]
+
+Creates a new `Job` object for the `Project`. 
+
+User must be an `ORG_ADMIN` role or above for the `Organization`, or be a member of the `Project` in context.
+
+There are a number of methods for submitting jobs into the platform. The type of job is determined by the parameters in the body.
+
+Using a previously processed or indexed file.
+ - `source_file_id` a valid file uid
+ 
+Files that reside in volumes that are mounted to an engine.
+ - `file_path` the full path to the file on the Brevity Engine
+ - `location_id` the Engine uid the file is located on
+ - `nested_bundle` (optional) flag that only applies to directories, if `true` the root directory will be flattened (excluded)
+ 
+When submitting a new job, a map of optional metadata (keyas and values) may be specified via the `metadata` attribute.
+
++ Parameters
+    + organizationId (string, required) - UUID of the Organization
+    + projectId (string, required) - The UUID of the `Project`
+
++ Request Process an existing file is Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "source_file_id": "005d69d3-7de6-4545-90f2-ff5ec7758259"
+            }
+
++ Request Process an existing file with associated metadata is Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "source_file_id": "005d69d3-7de6-4545-90f2-ff5ec7758259",
+                "metadata": {
+                    "my_id": "job_001",
+                    "my_alt_code": "Job 1"
+                }
+            }
+            
++ Response 201
+
+    [Job][]
+
++ Request Submitting a mounted file is Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "location_id": "c360a67a-417c-494b-b3ea-6aba8cd24393",
+                "file_path": "/media/mymount/movie.mp4"
+            }
+            
++ Response 201
+
+    [Job][]
+
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+# Jobs [/organizations/{ouid}/jobs]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+    
+            {
+                "embedded": {
+                    "jobs": [ 
+                        {
+                            "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                            "status": "SUCCEEDED",
+                            "created_at": "2016-02-24T23:27:19.104+0000",
+                            "percent_complete": 1,
+                            "source_file": {
+                                "uid": "fb419bfd-2d1e-4f06-b871-357e5438547d",
+                                "name": "testmedia.mp4",
+                                "links": {
+                                    "self": {
+                                        "href": "https://files.brevityqa.net/organizations/265ff953-1426-4515-ad42-ad4d8fbd7f0e/files/fb419bfd-2d1e-4f06-b871-357e5438547d"
+                                    }
+                                }
+                            },
+                            "created_by": {
+                                "uid": "b3a07cfd-2969-49d2-b2cb-3fa543fdd772",
+                                "links": {
+                                    "self": {
+                                        "href": "https://organizations.brevityqa.net/organizations/265ff953-1426-4515-ad42-ad4d8fbd7f0e/users/b3a07cfd-2969-49d2-b2cb-3fa543fdd772"
+                                    }   
+                                }
+                            },
+
+                            "links" : {
+                                "self": { "href": "https://jobs.brevityqa.net/organziations/708577f3-2522-41d8-8636-3f759b46f1b0/jobs/ba3109cf-6163-4972-a3b2-7d4ca4efb407"
+                            }
+                        }
+                    ]
+                },
+                
+                "page": {
+                    "size": 10,
+                    "totalElements": 80,
+                    "totalPages": 40,
+                    "number": 1
+                },
+                
+                "links" : {
+                    "self": { "href": "https://jobs.brevityqa.net/organziations/708577f3-2522-41d8-8636-3f759b46f1b0/organizations/1e2f93bc-8d0d-4c27-83a3-716fc317e97d/jobs?page=3&size=2" },
+                    "first": { "href": "https://jobs.brevityqa.net/organziations/708577f3-2522-41d8-8636-3f759b46f1b0/organizations/1e2f93bc-8d0d-4c27-83a3-716fc317e97d/jobs?page=1&size=2" },
+                    "prev": { "href": "https://jobs.brevityqa.net/organziations/708577f3-2522-41d8-8636-3f759b46f1b0/organizations/1e2f93bc-8d0d-4c27-83a3-716fc317e97d/jobs?page=2&size=2" },
+                    "next": { "href": "https://jobs.brevityqa.net/organziations/708577f3-2522-41d8-8636-3f759b46f1b0/organizations/1e2f93bc-8d0d-4c27-83a3-716fc317e97d/jobs?page=4&size=2" },
+                    "last": { "href": "https://jobs.brevityqa.net/organziations/708577f3-2522-41d8-8636-3f759b46f1b0/organizations/1e2f93bc-8d0d-4c27-83a3-716fc317e97d/jobs?page=40&size=2" }
+                ]
+            }
+
+
+
+## Get all Jobs for an Organization [GET /organizations/{ouid}/jobs{?page,size,filter,sort}]
+
+Returns all `Job` objects for a specific `Organization`. 
+
+Results may be filtered, sorted and/or paginated.
+
+User must have the `ORG_ADMIN` role or above for the `Organization`.
+
++ Parameters
+    + ouid (string, required) - UUID of the parent Organization
+    + page (integer, optional) - See *pagination*.
+    + size (integer, optional) - See *pagination*.
+    + filter (string, optional) - See *filtering*.  
+    + sort (string, optional) - See *sorting*.  Available fields to sort by are: `createdAt`.
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Jobs][]
+
++ Request Organization does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Get all Jobs for a Project [GET /organizations/{ouid}/projects/{puid}/jobs{?page,size,filter,sort}]
+
+Returns all `Job` objects for a specific `Project`. 
+
+Results may be filtered, sorted and/or paginated.
+
+User must have the `ORG_ADMIN` role or above for the `Organization`, or be an `EDITOR` or above for the `Project`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + puid (string, required) - UUID of the parent Project
+    + page (integer, optional) - See *pagination*.
+    + size (integer, optional) - See *pagination*.
+    + filter (string, optional) - See *filtering*.  
+    + sort (string, optional) - See *sorting*.  Available fields to sort by are: `createdAt`.
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Jobs][]
+
++ Request Project does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Get all Jobs for a User [GET /organizations/{ouid}/users/{uid}/jobs{?page,size,filter,sort}]
+
+Returns all `Job` objects for a specific `User`. 
+
+Results may be filtered, sorted and/or paginated.
+
+User must have the ORG_MANAGER role or above for the `Organization`, or be a member or owner of a `Project` that contains the returned `Jobs`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + uid (string, required) - UUID of the User
+    + page (integer, optional) - See *pagination*.
+    + size (integer, optional) - See *pagination*.
+    + filter (string, optional) - See *filtering*.  
+    + sort (string, optional) - See *sorting*.  Available fields to sort by are: `createdAt`.
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Jobs][]
+
++ Request User does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+# Deliveries [/organizations/{ouid}/users/{uoid}/deliveries]
+
+A delivery represents a file intended for a recipient.  Deliveries will have one of the following stauses:
++ READY
+    + All upstream workflow actions (e.g. transcoding) are complete, and the file is ready for the recipient to download
++ DOWNLOADING
+    + Downloading is in progress
++ FAILED
+    + Delivery of the file failed
++ DELIVERED
+    + The file was delivered and received by the recipient successfully
+    
+In some cases, there may be multiple recorded delivery attempts for a file.  Examples include failed followed by a retry, or a subseuqent redownload if the file was still available for download.
+
+Deliveries marked as `READY` will only be returned for the `User` if they still have access to the `Project` in context.
+
+
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+    
+            {
+                "deliveries": [
+                    {
+                        "uid": "1d1a50d4-9020-4251-a23a-5f49ca214e64",
+                        "status": "DELIVERED",
+                        "delivered_at": "2015-07-17T07:56:10.54+01:00",
+                        
+                        "embedded": {
+                            "files": [{
+                                "uid": "92389905-e729-46b4-a069-1de160999914",
+                                "name": "bigbunny.mp4",
+                                "relative_path": "videos/january/",
+                                "size": 173627832,
+                        
+                                "links" : {
+                                    "self": { "href": "https://files.brevityqa.net/organizations/92389905-e729-46b4-a069-1de160999914/files/92389905-e729-46b4-a069-1de160999914" },
+                                 }
+                            }],
+                            
+                            "project": {
+                                "uid": "208303f2-6bed-4805-8be6-d65ad13807a2",
+                                "name": "TV Editorial",
+                        
+                                "links" : {
+                                    "self": { "href": "https://organizations.brevityqa.net/organizations/92389905-e729-46b4-a069-1de160999914/projects/92389905-e729-46b4-a069-1de160999914" },
+                                 }
+                            },
+                            
+                            "job": {
+                                "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                                "created_at": "2015-07-16T19:20:30.45+01:00",
+                        
+                                "links" : {
+                                    "self": { "href": "https://jobs.brevityqa.net/organizations/92389905-e729-46b4-a069-1de160999914/jobs/ba3109cf-6163-4972-a3b2-7d4ca4efb407" },
+                                 }
+                            },
+                            
+                            "sender": {
+                                "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                                "name": "John Smith",
+                        
+                                "links" : {
+                                    "self": { "href": "https://organizations.brevityqa.net/organizations/92389905-e729-46b4-a069-1de160999914//users/b4c14647-0613-4ddf-8349-a204b6e4faef" },
+                                 }
+                            }
+                        }
+                    }                
+                ],
+                
+                "page": {
+                    "size": 2,
+                    "totalElements": 80,
+                    "totalPages": 40,
+                    "number": 3
+                },
+                
+                "links" : {
+                    "self": { "href": "https://jobs.brevityqa.net/organizations/1e2f93bc-8d0d-4c27-83a3-716fc317e97d/users/2dba64f9-f9a3-4877-9b8b-854b2ae03f8c/deliveries?page=3&size=2" },
+                    "first": { "href": "https://jobs.brevityqa.net/organizations/1e2f93bc-8d0d-4c27-83a3-716fc317e97d/jobs/2dba64f9-f9a3-4877-9b8b-854b2ae03f8c/deliveries?page=1&size=2" },
+                    "prev": { "href": "https://jobs.brevityqa.net/organizations/1e2f93bc-8d0d-4c27-83a3-716fc317e97d/jobs/2dba64f9-f9a3-4877-9b8b-854b2ae03f8c/deliveries?page=2&size=2" },
+                    "next": { "href": "https://jobs.brevityqa.net/organizations/1e2f93bc-8d0d-4c27-83a3-716fc317e97d/jobs/2dba64f9-f9a3-4877-9b8b-854b2ae03f8c/deliveries?page=4&size=2" },
+                    "last": { "href": "https://jobs.brevityqa.net/organizations/1e2f93bc-8d0d-4c27-83a3-716fc317e97d/jobs/2dba64f9-f9a3-4877-9b8b-854b2ae03f8c/deliveries?page=40&size=2" }
+                }
+            }
+
+
+
+## Get all Deliveries for a User [GET /organizations/{ouid}/users/{uuid}/deliveries{?page,size,filter,sort}]
+
+Returns information for all intended deliveries targeted towards a specific `User`.
+
+Results may be filtered by `status`, `project name`, `filename` or `sender`.  
+
+The following sort options are available:
++ date (default)
+    + delivery.delivered_at desc, job.created_at desc
++ file
+    + file.name
++ project
+    + project.name
++ sender
+    + sender.name
+
+Results may be paginated.
+
+User must have the ORG_ADMIN role or above for the `Organization`, or be the physical `User` in context.
+
++ Parameters
+    + ouid (string, required) - Uid of the Organization
+    + uuid (string, required) - Uid of the User
+    + page (integer, optional) - See *pagination*.
+    + size (integer, optional) - See *pagination*.
+    + filter (string, optional) - See *filtering*.  Results may be filtered by `status`, `project name`, `filename` or `sender`. 
+    + sort (string, optional) - See *sorting*.  Results may be sorted by `date`, `file`, `project` or `sender`.
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    [Deliveries][]
+
++ Request User does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+
+
+
+# Group locations service
+
+Endpoint:   https://locations-stable.brevitycloud.net
+
+# Introduction
+
+The *location* service handles all location specific endpoints, such as returning all locations for an Organization, or configuring watch folders.  All calls to this service require a valid *jwt* token.
+
+Locations can be classifed as the following:
++ ENGINE
+    + An engine that is capable of recieving and/or transcoding content then routing content to further destinations.
++ ENGINE CLUSTER
+    + A grouping of ENGINE's capable of distributing tasks to a specific ENGINE in the cluster.
++ FTP
+    + An external gateway to an FTP/FTPS site
++ VIMEO
+    + An external gateway to Vimeo
++ S3
+    + An external gateway to S3
+
+
+Each location type may have its own set of required configuration.  Custom configuration of a location can be applied at both the Organization and Project level.
+
+
+
+# Location [/locations/{uid}]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+
+            {
+                "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                "name: "West Coast",
+                "location_type": "Engine",
+                "enabled": true,
+
+                "latitude": 33.65,
+                "longitude": -117.72,
+                "resources": {
+                    "cpus": 32,
+                    "gpus": 4
+                },
+                "purge": true,
+                "purge_time_delivered": 86400,
+                "purge_time_undelivered": 172800,
+                "public_key": "hulwkjhdasadwkw;dw",
+
+                "config": {
+                    "type": "ORGANIZATION",
+                    "content_exists_rule": "FAIL"
+                },
+                
+                "creator_uid": "05d6734b-c59c-4c0a-a576-1744b6fa3ce7",            
+                
+                "_links" : {
+                    "self": { "href": "https://locations.brevityqa.net/organizations/1bbc4f3b-4cea-447f-9101-affbe4e5f0ca/locations/ba3109cf-6163-4972-a3b2-7d4ca4efb407" }
+                }
+            }
+
+## Get a Location with Organization configuration [GET /organizations/{ouid}/locations/{uid}]
+
+Returns a specific `Location` object based on the provided `uid`, returning configuration set at the `Organization` level. 
+
+User must either have the `ORG_MANAGER` role or above for the related `Organization`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + uid (string, required) - UUID of the Location
+    
++ Request for a Engine Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    + Body
+
+            {
+                "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                "name: "West Coast",
+                "location_type": "Engine",
+                "enabled": true,
+
+                "latitude": 33.65,
+                "longitude": -117.72,
+                "resources": {
+                    "cpus": 32,
+                    "gpus": 4
+                },
+                "purge": true,
+                "purge_time_delivered": 86400,
+                "purge_time_undelivered": 172800,
+                "public_key": "hulwkjhdasadwkw;dw",
+
+                "config": {
+                    "type": "ORGANIZATION",
+                    "content_exists_rule": "FAIL"
+                },
+                
+                "creator_uid": "05d6734b-c59c-4c0a-a576-1744b6fa3ce7",            
+                
+                "_links" : {
+                    "self": { "href": "https://locations.brevityqa.net/organizations/1bbc4f3b-4cea-447f-9101-affbe4e5f0ca/locations/ba3109cf-6163-4972-a3b2-7d4ca4efb407" }
+                }
+            }
+
++ Request for a FTP gateway Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    + Body
+
+            {
+                "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                "name: "West Coast",
+                "location_type": "FtpGateway",
+                "enabled": true,
+                
+                "protocol": "FTPS",
+                "server": "my.ftp.com",
+                "port": 22,
+
+                config: {
+                    "type": "Organization",
+                    "path": "/my/folder/",
+                    "username": "my-ftp-user",
+                    "password": "my-ftp-password"
+                },
+                
+                "creator_uid": "05d6734b-c59c-4c0a-a576-1744b6fa3ce7",                
+                
+                "_links" : {
+                    "self": { "href": "https://locations.brevitycloud.net/organizations/1bbc4f3b-4cea-447f-9101-affbe4e5f0ca/locations/ba3109cf-6163-4972-a3b2-7d4ca4efb407" }
+                }
+            }
+
++ Request for a S3 gateway Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    + Body
+
+            {
+                "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                "name: "West Coast",
+                "location_type": "S3Gateway",
+                "enabled": true,
+                
+                "region": "us-west-1",
+                "bucket": "my-bucket",
+
+                config: {
+                    "type": "Organization",
+                    "access_key_id": "82jsj2d92e72eh",
+                    "secret_access_key": "hd72h8d67y292ej",
+                    "bucket_path": "my/folder/sturucture"
+                },
+                
+                "creator_uid": "05d6734b-c59c-4c0a-a576-1744b6fa3ce7",                
+                
+                "_links" : {
+                    "self": { "href": "https://locations.brevitycloud.net/organizations/1bbc4f3b-4cea-447f-9101-affbe4e5f0ca/locations/ba3109cf-6163-4972-a3b2-7d4ca4efb407" }
+                }
+            }
+
++ Request for a Vimeo gateway Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    + Body
+
+            {
+                "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                "name: "West Coast",
+                "location_type": "VimeoGateway",
+                "enabled": true,
+
+                config: {
+                    "type": "Organization",
+                    "oauth_token": "82jsj2d92e72eh",
+                    "channel_id": "011244005",
+                    "upgrade_to_1080": fasle
+                },
+                
+                "creator_uid": "05d6734b-c59c-4c0a-a576-1744b6fa3ce7",                
+                
+                "_links" : {
+                    "self": { "href": "https://locations.brevitycloud.net/organizations/1bbc4f3b-4cea-447f-9101-affbe4e5f0ca/locations/ba3109cf-6163-4972-a3b2-7d4ca4efb407" }
+                }
+            }
+
+
+
++ Request Location does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+## Get a Location with Project configuration [GET /organizations/{ouid}/projects/{puid}/deliverysetting/{dsuid}/locations/{uid}]
+
+Returns a specific `Location` object based on the provided `uid`, returning configuration set at the `Project` level for a specific `DeliverySetting` if provided, but falling back to `Organization level` if none exists. 
+
+User must be a member of the `Project`, or be an `ORG_MANAGER` or above for the related `Organization`.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + puid (string, required) - The UUID of the Organization
+    + dsuid (string, required) - The UUID of the DeliverySetting
+    + uid (string, required) - UUID of the Location
+    
++ Request for a Engine Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    + Body
+
+            {
+                "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                "name: "West Coast",
+                "location_type": "Engine",
+                "enabled": true,
+
+                "latitude": 33.65,
+                "longitude": -117.72,
+                "resources": {
+                    "cpus": 32,
+                    "gpus": 4
+                },
+                "purge": true,
+                "purge_time_delivered": 86400,
+                "purge_time_undelivered": 172800,
+                "public_key": "hulwkjhdasadwkw;dw",
+
+                "config": {
+                    "type": "PROJECT",
+                    "content_exists_rule": "FAIL"
+                },
+                
+                "creator_uid": "05d6734b-c59c-4c0a-a576-1744b6fa3ce7",            
+                
+                "_links" : {
+                    "self": { "href": "https://locations.brevityqa.net/organizations/1bbc4f3b-4cea-447f-9101-affbe4e5f0ca/projects/74831266-cde5-4f7e-9a09-d44711299744/deliverysetting/f7e7a8c6-2dad-4f0d-86ce-20a75c889165/locations/ba3109cf-6163-4972-a3b2-7d4ca4efb407" }
+                }
+            }
+
++ Request for a FTP gateway Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    + Body
+
+            {
+                "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                "name: "West Coast",
+                "location_type": "FtpGateway",
+                "enabled": true,
+                
+                "protocol": "FTPS",
+                "server": "my.ftp.com",
+                "port": 22,
+
+                config: {
+                    "type": "PROJECT",
+                    "path": "/my/folder/",
+                    "username": "my-ftp-user",
+                    "password": "my-ftp-password"
+                },
+                
+                "creator_uid": "05d6734b-c59c-4c0a-a576-1744b6fa3ce7",                
+                
+                "_links" : {
+                    "self": { "href": "https://locations.brevitycloud.net/organizations/1bbc4f3b-4cea-447f-9101-affbe4e5f0ca/projects/74831266-cde5-4f7e-9a09-d44711299744/deliverysetting/f7e7a8c6-2dad-4f0d-86ce-20a75c889165/locations/ba3109cf-6163-4972-a3b2-7d4ca4efb407" }
+                }
+            }
+
++ Request for a S3 gateway Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    + Body
+
+            {
+                "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                "name: "West Coast",
+                "location_type": "S3Gateway",
+                "enabled": true,
+                
+                "region": "us-west-1",
+                "bucket": "my-bucket",
+
+                config: {
+                    "type": "PROJECT",
+                    "access_key_id": "82jsj2d92e72eh",
+                    "secret_access_key": "hd72h8d67y292ej",
+                    "bucket_path": "my/folder/sturucture"
+                },
+                
+                "creator_uid": "05d6734b-c59c-4c0a-a576-1744b6fa3ce7",                
+                
+                "_links" : {
+                    "self": { "href": "https://locations.brevitycloud.net/organizations/1bbc4f3b-4cea-447f-9101-affbe4e5f0ca/projects/74831266-cde5-4f7e-9a09-d44711299744/deliverysetting/f7e7a8c6-2dad-4f0d-86ce-20a75c889165/locations/ba3109cf-6163-4972-a3b2-7d4ca4efb407" }
+                }
+            }
+
++ Request for a Vimeo gateway Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 200
+
+    + Body
+
+            {
+                "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                "name: "West Coast",
+                "location_type": "VimeoGateway",
+                "enabled": true,
+
+                config: {
+                    "type": "PROJECT",
+                    "oauth_token": "82jsj2d92e72eh",
+                    "channel_id": "011244005",
+                    "upgrade_to_1080": fasle
+                },
+                
+                "creator_uid": "05d6734b-c59c-4c0a-a576-1744b6fa3ce7",                
+                
+                "_links" : {
+                    "self": { "href": "https://locations.brevitycloud.net/organizations/1bbc4f3b-4cea-447f-9101-affbe4e5f0ca/projects/74831266-cde5-4f7e-9a09-d44711299744/deliverysetting/f7e7a8c6-2dad-4f0d-86ce-20a75c889165/locations/ba3109cf-6163-4972-a3b2-7d4ca4efb407" }
+                }
+            }
+
++ Request Location does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+## Create a Location [POST /organizations/{ouid}/locations]
+
+Creates a new `Location`. 
+
+User must have the `ORG_ADMIN` role or above.
+
++ Request Create Engine Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "location_type": "Engine",
+                "name: "West Coast",
+                "public_key": "abcdef123456",
+                "enabled": true
+            }
+            
++ Response 201
+
+    [Location][]
+
++ Request to create Engine Cluster with Organization configuration Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "location_type": "EngineCluster",
+                "name: "West Coast",
+                "enabled": true,
+                "priority": 1
+            }
+
++ Response 201    
+
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
++ Request to create FTP gateway with Organization configuration Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 201
+
+    + Body
+
+            {
+                "location_type": "FtpGateway",
+                "name: "West Coast",
+                
+                "protocol": "FTPS",
+                "server": "my.ftp.com",
+                "port": 22,
+                
+                config: {
+                    "path": "/my/folder/",
+                    "username": "my-ftp-user",
+                    "password": "my-ftp-password"
+                },
+
+                "enabled": true
+            }
+
++ Request to create S3 gateway with Organization configuration Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 201
+
+    + Body
+
+            {
+                "location_type": "S3Gateway",
+                "name: "West Coast",
+                
+                "region": "us-west-1",
+                "bucket": "my-bucket",
+
+                config: {
+                    "access_key_id": "82jsj2d92e72eh",
+                    "secret_access_key": "hd72h8d67y292ej",
+                    "bucket_path": "my/folder/sturucture"
+                },
+                
+                "enabled": true
+            }
+    
+
++ Request to create Vimeo gateway with Organization configuration Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 201
+
+    + Body
+
+            {
+                "location_type": "VimeoGateway",
+                "name: "West Coast",
+                
+                config: {
+                    "channel_id": "1032541",
+                    "upgrade_to_1080": true
+                },
+                
+                "enabled": true
+            }
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+## Add an Engine to a Cluster [PUT /organizations/{organizationUid}/locations/{clusterUid}/members/{engineUid}]
+
+Adds an existing engine to an existing cluster. Engines may be added to multiple clusters. After a successful request the updated cluster resource is returned.
+
+User must have the `ORG_MANAGER` role and above for the `Organizations` and the `Organization` must have permision to use both the engine and the cluster.
+
++ Request Add Engine Successful
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+            
++ Response 201
+
+    + Body
+    
+            {
+                "uid": "0a579764-03a3-435e-8836-ac9679118b8f",
+                "name": "My Cluster",
+                "enabled": true,
+                "_embedded": {
+                    "members": [
+                        {
+                            "uid": "3f902984-8e9d-4927-ac7a-1c30bcc2b13c",
+                            "name": "Brevity Engine - cse1-r1.brevitycloud.net - Irvine California",
+                            "_links": {
+                                "self": {
+                                    "href": "http://locations.brevitycloud.net/organizations/513af6e9-5c70-44f3-b620-20ad3edc8232/locations/3f902984-8e9d-4927-ac7a-1c30bcc2b13c"
+                                }
+                            }
+                        }
+                    ]
+                },
+                "priority": 10,
+                "_links": {
+                    "self": {
+                        "href": "http://locations.brevitycloud.net/organizations/513af6e9-5c70-44f3-b620-20ad3edc8232/locations/0a579764-03a3-435e-8836-ac9679118b8f"
+                    }
+                },
+                "type": "LOCATION",
+                "location_type": "EngineCluster"
+                "created_at": 1488332439695,
+                "updated_at": 1488332439892,
+                "creator_uid": "513af6e9-5c70-44f3-b620-20ad3edc8232",
+                "creator_name": "AllDigital, Inc"
+            }
+
++ Request with incorrect Engine or Cluster uids
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Request without permission to use the engine or cluster
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 403
+
++ Request with unauthorized jwt token
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 403
+
+## Delete an Engine From a Cluster [DELETE /organizations/{organizationUid}/locations/{clusterUid}/members/{engineUid}]
+
+Delete an existing engine from an existing cluster. On successful deletion of if the engine is already not part of the cluster, the current cluster resource is returned.
+
+User must have the `ORG_MANAGER` role and above for the `Organizations` and the `Organization` must have permision to use both the engine and the cluster.
+
++ Request Add Engine Successful
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 200
+
+    + Body
+    
+            {
+                "uid": "0a579764-03a3-435e-8836-ac9679118b8f",
+                "name": "My Cluster",
+                "enabled": true,
+                "_embedded": {
+                    "members": [
+                        {
+                            "uid": "3f902984-8e9d-4927-ac7a-1c30bcc2b13c",
+                            "name": "Brevity Engine - cse1-r1.brevitycloud.net - Irvine California",
+                            "_links": {
+                                "self": {
+                                    "href": "http://locations.brevitycloud.net/organizations/513af6e9-5c70-44f3-b620-20ad3edc8232/locations/3f902984-8e9d-4927-ac7a-1c30bcc2b13c"
+                                }
+                            }
+                        }
+                    ]
+                },
+                "priority": 10,
+                "_links": {
+                    "self": {
+                        "href": "http://locations.brevitycloud.net/organizations/513af6e9-5c70-44f3-b620-20ad3edc8232/locations/0a579764-03a3-435e-8836-ac9679118b8f"
+                    }
+                },
+                "type": "LOCATION",
+                "location_type": "EngineCluster"
+                "created_at": 1488332439695,
+                "updated_at": 1488332439892,
+                "creator_uid": "513af6e9-5c70-44f3-b620-20ad3edc8232",
+                "creator_name": "AllDigital, Inc"
+            }
+
++ Request with incorrect Engine or Cluster uids
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 400
+
++ Request without permission to use the engine or cluster
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
++ Response 403
+
++ Request with unauthorized jwt token
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 403
+
+## Grant an Organization access to use a location [PUT /locations/{luid}/organizations/{ouid}]
+
+Grants an Organization the right to use a multi-tenant location. 
+
+User must have the `ORG_ADMIN` role and above for the `Organization`.
+
++ Parameters
+    + luid (string, required) - The UUID of the `Location`
+    + ouid (string, required) - The UUID of the `Organization`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+
+            
++ Response 200
+
+    [Location][]
+
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Revoke an Organization's access to use a location [DELETE /locations/{luid}/organizations/{ouid}]
+
+Revokes an Organization the right to use a multi-tenant location. 
+
+User must have the `ORD_ADMIN` role and above for the `Organization`.
+
++ Parameters
+    + luid (string, required) - The UUID of the `Location`
+    + ouid (string, required) - The UUID of the `Organization`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 204
+
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Update a Location with Organization based configuration [PATCH /organizations/{ouid}/locations/{uid}]
+
+Updates the `Organization` based `Location` configuration of the provided uid. 
+
+Only `ORG_ADMIN` users may update the Organziation configuration for a Location.
+
+All users must have authorization to access both the `Organization` and `Location` in context.
+
+Locations of `EngineCluster` don't have a configuration.
+
++ Parameters
+    + ouid (string, required) - The UUID of the Organization
+    + uid (string, required) - The UUID of the `Location`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "location_type": "Engine",
+                "name: "West Coast",
+                "enabled": true,
+                
+                "purge": false,
+                "purge_time_delivered": 86400,
+                "purge_time_undelivered": 172800,
+                
+                config: {
+                    "public_key": "hulwkjhdasadwkw;dw",
+                }
+            }
+            
++ Response 200
+
+    [Location][]
+
++ Request Location does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Update a Location with Project based configuration [PATCH /organizations/{ouid}/projects/{puid}/deliverysetting/{dsuid}/locations/{uid}]
+
+Updates the `Project` based `Location` configuration of the provided uid. 
+
+Only `ORG_ADMIN` users may update the fields that are held outside the `config` nested json object.
+
+An `ORG_ADMIN` or above, or an `EDITOR` or above of the `Project`, may update the fields within the `config` attribute for any kind of Location.
+
+All users must have authorization to access both the `Project` and `Location` in context.
+
+Locations of type `EngineCluster` don't have a configuration.
+
++ Parameters
+    + puid (string, required) - The UUID of the Project
+    + ouid (string, required) - The UUID of the Organization
+    + dsuid (string, required) - The UUID of the DeliverySetting
+    + uid (string, required) - The UUID of the `Location`
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "location_type": "Engine",
+                "name: "West Coast",
+                "enabled": true,
+                
+                "purge": false,
+                "purge_time_delivered": 86400,
+                "purge_time_undelivered": 172800,
+                
+                config: {
+                    "public_key": "hulwkjhdasadwkw;dw",
+                }
+            }
+            
++ Response 200
+
+    [Location][]
+
++ Request Location does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Delete a Project based configuration for a Location [DELETE /organizations/{ouid}/projects/{puid}/deliverysetting/{dsuid}/locations/{uid}]
+
+Deletes the `Project` based `Location` configuration of the provided uid. 
+
+An `ORG_ADMIN` or above, or an `EDITOR` or above of the `Project`, may delete the Project `config` of a Location.
+
+All users must have authorization to access both the `Project` and `Location` in context.
+
++ Parameters
+    + puid (string, required) - The UUID of the Project
+    + dsuid (string, required) - The UUID of the DeliverySetting
+    + ouid (string, required) - The UUID of the Organization
+    + uid (string, required) - The UUID of the `Location`
+
++ Request Successful
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+# Locations [/organizations/{ouid}/locations]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+    
+            {
+                "embedded": {
+                    "locations": [ {
+                        "uid": "c3306b89-5cea-459e-bcab-f2aab5978de4",
+                        "name": "CSA 03",
+                        "enabled": true,
+                        "latitude": 33.65,
+                        "longitude": -117.72,
+                        "resources": {
+                            "cpus": 8,
+                            "gpus": 1
+                        },
+                        "purge": true,
+                        "links": {
+                            "self": {
+                                "href": "https://locations.brevitycloud.net/locations/c3306b89-5cea-459e-bcab-f2aab5978de4?validate_only=false"
+                            }
+                        },
+                        "location_type": "Engine",
+                        "public_key": "7shswudwf93r82e20f239iguujfdqwle",
+                        "purge_time_delivered": 86400,
+                        "purge_time_undelivered": 172800
+                    }
+                ]},
+                "links": {
+                    "self": {
+                        "href": "https://locations.brevitycloud.net/organizations/513af6e9-5c70-44f3-b620-20ad3edc8232/locations{?page,size,sort}",
+                        "templated": true
+                    },
+                    "next": {
+                        href": "https://locations.brevitycloud.net/organizations/513af6e9-5c70-44f3-b620-20ad3edc8232/locations?page=1&size=10{&sort}",
+                        "templated": true
+                    }
+                },
+                "page": {
+                    "size": 10,
+                    "totalElements": 19,
+                    "totalPages": 1,
+                    "number": 0
+                }
+            }
+
+
+
+## Get all Locations for a specific Organization [GET /organizations/{uid}/locations{?page,size,filter,sort}]
+
+Returns all `Location` objects that a given `Organization` has access to. 
+
+Results may be filtered, sorted and/or paginated.
+
+User must have the `ORG_MANAGER` role or above for the `Organization`.
+
++ Parameters
+    + uid (string, required) - Uid of the Organization
+    + page (integer, optional) - See *pagination*.
+    + size (integer, optional) - See *pagination*.
+    + filter (string, optional) - See *filtering*.  
+    + sort (string, optional) - See *sorting*.  Available fields to sort by are: `name` and `createdAt`.
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 200
+
+    [Locations][]
+
++ Request Organization does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+# WatchFolder [/organizations/{ouid}/locations/{luid}/watchfolders/{uid}]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+
+            {
+                "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                "path": "/usr/local/brevity/videos",
+                
+                "on_success": "PURGE",
+                "on_failure": "MOVE",
+                
+                "created_at": "2016-03-25T03:13:28.786+0000",
+                "updated_at": "2016-03-25T03:13:28.786+0000",
+                "enabled": true,
+                
+                "embedded": {
+                    
+                    "location": {
+                        "uid": "74831266-cde5-4f7e-9a09-d44711299744"
+                    },
+                    
+                    "organization": {
+                        "uid": "c360a67a-417c-494b-b3ea-6aba8cd24393"
+                    },
+                    
+                    "project": {
+                        "uid": "2f57f2a3-ad07-40d7-8140-8e4b443379cc",
+                        "name": Web videos"
+                    },
+                    
+                    "impersonates": {
+                        "uid": "f7e7a8c6-2dad-4f0d-86ce-20a75c889165",
+                        "name": "John Smith"
+                    },
+                    
+                    "created_by": {
+                        "uid": "05d6734b-c59c-4c0a-a576-1744b6fa3ce7"
+                    }
+                },
+                    
+                "links" : {
+                    "self": { "href": "https://organizations.brevitycloud.net/organizations/ec1eebad-d760-42aa-80cd-c9faa7291595/locations/92389905-e729-46b4-a069-1de160999914/watchfolders/ba3109cf-6163-4972-a3b2-7d4ca4efb407" }
+                }
+            }
+
+
+## Get a WatchFolder [GET /organizations/{ouid}/locations/{luid}/watchfolders/{uid}]
+
+Returns a specific `WatchFolder` object based on the provided `uid`. 
+
+User must be an `ORG_ADMIN` role or above for the `Organization`, with the `Organization` being authorized to use the `Location`.
+
++ Parameters
+    + ouid (string, required) - UUID of the Organization
+    + luid (string, required) - UUID of the Location
+    + uid (string, required) - UUID of the WatchFolder
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 200
+
+    [WatchFolder][]
+
++ Request Location does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 204
+    
++ Request with no authorization to use the Location (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 403
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+## Delete a WatchFolder [DELETE /organizations/{ouid}/locations/{luid}/watchfolders/{uid}]
+
+Deletes a specific `WatchFolder` object based on the provided `uid`. 
+
+User must be an `ORG_ADMIN` role or above for the `Organization`.
+
++ Parameters
+    + ouid (string, required) - UUID of the Organization
+    + luid (string, required) - UUID of the Location
+    + uid (string, required) - UUID of the WatchFolder
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+
+## Update a WatchFolder [PATCH /organizations/{ouid}/locations/{luid}/watchfolders/{uid}]
+
+Updates a specific `WatchFolder` object based on the provided `uid`. 
+
+The only attributes that may be updated are `path`, `on_success`, `on_failure`, `enabled`, `_embedded.project.uid` and `_embedded.impersonates.uid`.  Any other parameters will be silently ignored.
+
+User must be an `ORG_ADMIN` role or above for the `Organization`.
+
++ Parameters
+    + ouid (string, required) - UUID of the Organization
+    + luid (string, required) - UUID of the Location
+    + uid (string, required) - UUID of the WatchFolder
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                "path": "/brevity/videos",
+                
+                "on_success": "PURGE",
+                "on_failure": "MOVE",
+                
+                "enabled": true,
+                
+                "_embedded": {
+                    
+                    "project": {
+                        "uid": "2f57f2a3-ad07-40d7-8140-8e4b443379cc"
+                    },
+                    
+                    "impersonates": {
+                        "uid": "74831266-cde5-4f7e-9a09-d44711299744"
+                    }
+                }
+            }
+
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+## Create a WatchFolder [POST /organizations/{ouid}/locations/{luid}/watchfolders]
+
+Creates a WatchFolder on the provided `Location` for the provided `Organization`.
+
+User must be an `ORG_ADMIN` role or above for the `Organization`, with the `Organization` being authorized to use the `Location`.
+
++ Parameters
+    + ouid (string, required) - UUID of the Organization
+    + luid (string, required) - UUID of the Location
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
+    + Body
+
+            {
+                "path": "/brevity/videos",
+                
+                "on_success": "PURGE",
+                "on_failure": "MOVE",
+                
+                "_embedded": {
+                    
+                    "project": {
+                        "uid": "2f57f2a3-ad07-40d7-8140-8e4b443379cc"
+                    },
+                    
+                    "impersonates": {
+                        "uid": "74831266-cde5-4f7e-9a09-d44711299744"
+                    }
+                }
+            }
+        
++ Response 201
+
+    [WatchFolder][]
+
++ Request Location does not exist (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 204
+
++ Request Organization not permitted to use Location (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 403
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+# WatchFolders [/organizations/{ouid}/locations/{luid}/watchfolders]
+
++ Model (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Body
+    
+            {
+                "embedded": {
+                    "watchfolders": [ {
+                        "uid": "ba3109cf-6163-4972-a3b2-7d4ca4efb407",
+                        "path": "/usr/local/brevity/videos",
+                        
+                        "on_success": "PURGE",
+                        "on_failure": "MOVE",
+                        
+                        "created_at": "2016-03-25T03:13:28.786+0000",
+                        "updated_at": "2016-03-25T03:13:28.786+0000",
+                        "enabled": true,
+                        
+                        "embedded": {
+                            
+                            "location": {
+                                "uid": "74831266-cde5-4f7e-9a09-d44711299744"
+                            },
+                            
+                            "organization": {
+                                "uid": "c360a67a-417c-494b-b3ea-6aba8cd24393"
+                            },
+                            
+                            "project": {
+                                "uid": "2f57f2a3-ad07-40d7-8140-8e4b443379cc",
+                                "name": Web videos"
+                            },
+                            
+                            "impersonates": {
+                                "uid": "f7e7a8c6-2dad-4f0d-86ce-20a75c889165",
+                                "name": "John Smith"
+                            },
+                            
+                            "created_by": {
+                                "uid": "05d6734b-c59c-4c0a-a576-1744b6fa3ce7"
+                            }
+                        },
+                            
+                        "links" : {
+                            "self": { "href": "https://organizations.brevitycloud.net/organizations/ec1eebad-d760-42aa-80cd-c9faa7291595/locations/92389905-e729-46b4-a069-1de160999914/watchfolders/ba3109cf-6163-4972-a3b2-7d4ca4efb407" }
+                        }
+                    }]
+                },
+                
+                "page": {
+                    "size": 10,
+                    "totalElements": 1,
+                    "totalPages": 1,
+                    "number": 1
+                },
+                "links" : {
+                    "self": { "href": "https://organizations.brevitycloud.net/organizations/ec1eebad-d760-42aa-80cd-c9faa7291595/locations/92389905-e729-46b4-a069-1de160999914/watchfolders?page=1&size=10" },
+                    "first": { "href": "https://organizations.brevitycloud.net/organizations/ec1eebad-d760-42aa-80cd-c9faa7291595/locations/92389905-e729-46b4-a069-1de160999914/watchfolders?page=1&size=10" },
+                    "prev": { "href": "https://organizations.brevitycloud.net/organizations/ec1eebad-d760-42aa-80cd-c9faa7291595/locations/92389905-e729-46b4-a069-1de160999914/watchfolders?page=1&size=0" },
+                    "next": { "href": "https://organizations.brevitycloud.net/organizations/ec1eebad-d760-42aa-80cd-c9faa7291595/locations/92389905-e729-46b4-a069-1de160999914/watchfolders?page=3&size=10" },
+                    "last": { "href": "https://organizations.brevitycloud.net/organizations/ec1eebad-d760-42aa-80cd-c9faa7291595/locations/92389905-e729-46b4-a069-1de160999914/watchfolders?page=3&size=10" }
+                }
+            }
+
+            
+
+
+## Get all WatchFolders residing at a Location for an Organization [GET /organizations/{ouid}/locations/{luid}/watchfolders]
+
+Returns a list of all `WatchFolder` objects that relate at a specific `Location` based on the provided `luid`. 
+
+User must be an `ORG_ADMIN` role or above for the `Organization`, or be the physical `Location` making the call.
+
++ Parameters
+    + ouid (string, required) - UUID of the Organization
+    + luid (string, required) - UUID of the Location
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 200
+
+    [WatchFolders][]
+
++ Request Location does not exist, or not authorized to use (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+            
+
+
+## Get all WatchFolders residing at a Location  [GET /locations/{luid}/watchfolders]
+
+Returns a list of all `WatchFolder` objects that relate at a specific `Location` based on the provided `luid`. 
+
+User must be the `Location` making the call.
+
++ Parameters
+    + luid (string, required) - Uid of the Location
+
++ Request Successful (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 200
+
+    [WatchFolders][]
+
++ Request Location does not exist, or not authorized to use (application/vnd.ad-brevity-v1.0hal+json)
+
+    + Headers
+    
+            Accept: application/vnd.ad-brevity-v1.0hal+json
+
++ Response 204
+    
++ Request with unauthorized jwt token (application/vnd.ad-brevity-v1.0hal+json)
++ Response 403
+
+
+
+# Group callbacks service
+
+# Introduction
+
+Callbacks may be configured at the `Organization` level by `ORG_ADMIN`'s and above.
+
+The following events may be configured which act as the trigger for the callback:
+- JOB.CREATED
+- JOB.FAILED
+- JOB.SUCCEEDED
+
+The callback url itself may be configured using the following url tokens that will be substitued at the time of making the callback:
+- {{ORGANIZATION_UID}}
+- {{PROJECT_UID}}
+- {{JOB_UID}}
+
+If configured, upon encountering one of the above events, the following request body is `POST`ed to the configured callback url for the organization.
+
++ Sample POST body for JOB.CREATED / JOB.FAILED event
+
+        {
+            "organization_uid": "782e1b74-72d5-4aff-8594-724b17e2d887",
+            "project_uid": "1066ba69-aeba-4a43-8605-2105a4e77043",
+            "job_uid": "7b59c0ab-d61c-436e-8e60-a8f638fc119a"
+    
+            "event": "JOB.CREATED",
+    
+            "links": {
+                "organization": { "href": "/organizations/782e1b74-72d5-4aff-8594-724b17e2d887" },
+                "job": { "href": "/organizations/782e1b74-72d5-4aff-8594-724b17e2d887/jobs/7b59c0ab-d61c-436e-8e60-a8f638fc119a" },
+                "project": { "href": "/organizations/782e1b74-72d5-4aff-8594-724b17e2d887/projects/1066ba69-aeba-4a43-8605-2105a4e77043" }
+            }
+        }
+        
+        
++ Sample POST body for JOB.SUCCEEDED event
+
+    {
+        "organization_uid": "782e1b74-72d5-4aff-8594-724b17e2d887",
+        "project_uid": "1066ba69-aeba-4a43-8605-2105a4e77043",
+        "job_uid": "7b59c0ab-d61c-436e-8e60-a8f638fc119a",
+    
+        "event": "JOB.SUCCEEDED",
+        
+        "embedded": {
+            
+            "source_file": {
+                "uid": "71732389-85b4-4352-adb7-12e656f0fe17",
+                "name": "video.mov",
+                "storage": {
+                        "location_uid": "6ab1428b-686e-4328-9306-6caf2520d5fa",
+                        "location_name": "West Coast Engine",
+                        "path": "/files/92389905-e729-46b4-a069-1de160999914"
+                },
+                "links" : {
+                    "self": { "href": "https://files.brevitycloud.net/organizations/782e1b74-72d5-4aff-8594-724b17e2d887/files/71732389-85b4-4352-adb7-12e656f0fe17" }
+                }
+            },
+            
+            "deliveries": [{
+                "uid": "208303f2-6bed-4805-8be6-d65ad13807a2",
+                "destination": {
+                    "uid": "23b476d0-ad8e-47ce-81ea-dde965408f8a",
+                    "name": "West Coast Appliance"
+                },
+                "profile": { 
+                    "uid": "4025b251-a7ca-4fed-8bd7-8c55fad58906",
+                    "name": "H.264 (Baseline@L3.1) 2500 MP4 720p 23.98fps"   
+                },
+                "file": {
+                    "uid": "dd2a7a09-ed8e-49d3-9ef1-20030784c487",
+                    "name": "video.mp4",
+                    "storage": {
+                            "location_uid": "6ab1428b-686e-4328-9306-6caf2520d5fa",
+                            "location_name": "West Coast Engine",
+                            "path": "/files/92389905-e729-46b4-a069-1de160999914"
+                    },
+                    "links" : {
+                        "self": { "href": "https://files.brevitycloud.net/organizations/782e1b74-72d5-4aff-8594-724b17e2d887/files/dd2a7a09-ed8e-49d3-9ef1-20030784c487" }
+                    }
+                },
+                "links" : {
+                    "self": { "href": "https://projects.brevitycloud.net/organizations/{ouid}/projects/{puid}/delivery_settings/{uid}"}
+                }
+            }]
+        },
+    
+        "links": {
+            "organization": { "href": "https://organizations.brevitycloud.net/organizations/782e1b74-72d5-4aff-8594-724b17e2d887" },
+            "job": { "href": "https://jobs.brevitycloud.net/organizations/782e1b74-72d5-4aff-8594-724b17e2d887/jobs/7b59c0ab-d61c-436e-8e60-a8f638fc119a" },
+            "project": { "href": "https://projects.brevitycloud.net/organizations/782e1b74-72d5-4aff-8594-724b17e2d887/projects/1066ba69-aeba-4a43-8605-2105a4e77043" }
+        }
+    }
